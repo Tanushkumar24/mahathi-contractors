@@ -123,7 +123,12 @@ export const AuthProvider = ({ children }) => {
   /**
    * Logs out user and clears local session
    */
-  const logout = () => {
+  const logout = async () => {
+    try {
+      await api.post('/api/auth/logout');
+    } catch (err) {
+      console.error('Failed to notify backend on logout:', err);
+    }
     localStorage.removeItem('mbc_jwt_token');
     localStorage.removeItem('mbc_user_session');
     setUser(null);

@@ -26,7 +26,7 @@ Simhadri Sampath Kumar
 
 ## Goals for this rebuild
 
-- Remove all Base44 branding and demo code.
+- Remove all old branding and demo code.
 - Remove AI features, blog pages, and any sample/placeholder content.
 - Deliver a focused, mobile-first public site for construction services, bookings, site visits, quotes, and enquiries.
 - Provide a separate, secure admin dashboard at `admin.mahathicontractors.in`.
@@ -134,7 +134,7 @@ npx prisma init --datasource-provider postgresql
 
 ## Next steps (immediate)
 
-1. Audit the current repository and list Base44/AI/Blog/Auth/demo files to remove. (in progress)
+1. Audit the current repository and list old/AI/Blog/Auth/demo files to remove. (in progress)
 2. Remove demo code and unused dependencies.
 3. Scaffold `web/` Next.js app and implement the homepage per above-the-fold requirements.
 4. Scaffold `api/` backend with Prisma schema for Services, Bookings, Leads, Admins.

@@ -2,8 +2,12 @@ import express from 'express';
 import cors from 'cors';
 import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
+import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
+import rateLimit from 'express-rate-limit';
 import { supabase } from './supabase.js';
 import { sendSMS } from './sms.js';
+import { sendWhatsApp } from './whatsapp.js';
 import { verifyToken, verifyAdmin } from './authMiddleware.js';
 
 dotenv.config();
@@ -13,15 +17,114 @@ const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET;
 const ADMIN_NUMBERS = (process.env.ADMIN_NUMBERS || '8688074469,9398158902').split(',');
 
+// Security: HTTP headers protection
+app.use(helmet());
+
+// Security: CORS configuration with credentials support for HttpOnly cookies
+const whitelist = [
+  'https://mahathicontractors.in',
+  'http://localhost:5173',
+  'http://localhost:5000'
+];
+
 app.use(cors({
-  origin: '*', // Allow all origins for API accessibility (can be restricted in production)
+  origin: (origin, callback) => {
+    if (!origin || whitelist.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
+
 app.use(express.json());
+app.use(cookieParser());
+
+// Security: Global Rate Limiting (DDoS and abuse prevention)
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per windowMs
+  message: { error: 'Too many requests from this IP, please try again after 15 minutes.' }
+});
+app.use(globalLimiter);
+
+// Security: Auth specific Rate Limiting (Brute-force protection)
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 15, // limit each IP to 15 auth requests per windowMs
+  message: { error: 'Too many login attempts. Please try again after 15 minutes.' }
+});
+app.use('/api/auth/', authLimiter);
+
+// Security: Input Sanitization Middleware (XSS and script injection prevention)
+function sanitizeInput(req, res, next) {
+  const sanitize = (val) => {
+    if (typeof val === 'string') {
+      return val
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#x27;')
+        .replace(/\//g, '&#x2F;');
+    }
+    if (typeof val === 'object' && val !== null) {
+      for (const key in val) {
+        val[key] = sanitize(val[key]);
+      }
+    }
+    return val;
+  };
+  req.body = sanitize(req.body);
+  req.query = sanitize(req.query);
+  req.params = sanitize(req.params);
+  next();
+}
+app.use(sanitizeInput);
 
 // Request validator utility
 const isValidMobile = (num) => /^[6-9]\d{9}$/.test(num);
+
+// JWT & Refresh Token Helpers
+const generateAccessToken = (user) => {
+  return jwt.sign(
+    { id: user.id, mobile_number: user.mobile_number, role: user.role, name: user.name },
+    JWT_SECRET,
+    { expiresIn: '7d' } // JWT expiry (7 days)
+  );
+};
+
+const generateAndSetRefreshToken = async (req, res, userId) => {
+  const refreshToken = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(); // 30 days
+
+  // Store in database
+  const { error } = await supabase
+    .from('refresh_tokens')
+    .insert({
+      user_id: userId,
+      token: refreshToken,
+      expires_at: expiresAt
+    });
+
+  if (error) throw error;
+
+  // Set HttpOnly, Secure, SameSite=Strict cookie
+  const cookieDomain = process.env.COOKIE_DOMAIN || undefined;
+  res.cookie('mbc_refresh_token', refreshToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production' || req.secure || req.headers['x-forwarded-proto'] === 'https',
+    sameSite: 'strict',
+    path: '/',
+    domain: cookieDomain,
+    maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+  });
+
+  return refreshToken;
+};
 
 // ============================================================================
 // AUTHENTICATION ENDPOINTS
@@ -165,11 +268,8 @@ app.post('/api/auth/verify-otp', async (req, res) => {
     if (users && users.length > 0) {
       // Existing User -> Issue JWT session
       const user = users[0];
-      const token = jwt.sign(
-        { id: user.id, mobile_number: user.mobile_number, role: user.role, name: user.name },
-        JWT_SECRET,
-        { expiresIn: '7d' }
-      );
+      const token = generateAccessToken(user);
+      await generateAndSetRefreshToken(req, res, user.id);
       return res.status(200).json({ userExists: true, token, user });
     } else {
       // First time user -> Redirect to profile completion
@@ -240,18 +340,108 @@ app.post('/api/auth/register', async (req, res) => {
 
     const user = newUser[0];
 
-    // 5. Generate JWT token
-    const token = jwt.sign(
-      { id: user.id, mobile_number: user.mobile_number, role: user.role, name: user.name },
-      JWT_SECRET,
-      { expiresIn: '7d' }
-    );
+    // 5. Generate JWT and refresh tokens
+    const token = generateAccessToken(user);
+    await generateAndSetRefreshToken(req, res, user.id);
 
     return res.status(201).json({ token, user });
   } catch (err) {
     console.error('Error in register:', err);
     return res.status(500).json({ error: 'Registration failed. Please try again.' });
   }
+});
+
+/**
+ * Endpoint: Refresh Access Token using HttpOnly cookie
+ * POST /api/auth/refresh
+ */
+app.post('/api/auth/refresh', async (req, res) => {
+  const refreshToken = req.cookies.mbc_refresh_token;
+
+  if (!refreshToken) {
+    return res.status(401).json({ error: 'Refresh token missing.' });
+  }
+
+  try {
+    // 1. Fetch active refresh token from Supabase
+    const { data: records, error: fetchError } = await supabase
+      .from('refresh_tokens')
+      .select('*')
+      .eq('token', refreshToken)
+      .limit(1);
+
+    if (fetchError) throw fetchError;
+
+    if (!records || records.length === 0) {
+      return res.status(401).json({ error: 'Invalid refresh token.' });
+    }
+
+    const activeToken = records[0];
+
+    // 2. Expiry Check
+    if (new Date() > new Date(activeToken.expires_at)) {
+      // Delete expired token
+      await supabase.from('refresh_tokens').delete().eq('id', activeToken.id);
+      res.clearCookie('mbc_refresh_token', {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production' || req.secure || req.headers['x-forwarded-proto'] === 'https',
+        sameSite: 'strict',
+        path: '/',
+        domain: process.env.COOKIE_DOMAIN || undefined
+      });
+      return res.status(401).json({ error: 'Refresh token expired.' });
+    }
+
+    // 3. Fetch user details
+    const { data: users, error: userError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', activeToken.user_id)
+      .limit(1);
+
+    if (userError) throw userError;
+
+    if (!users || users.length === 0) {
+      return res.status(401).json({ error: 'User profile not found.' });
+    }
+
+    const user = users[0];
+
+    // 4. Delete old refresh token (refresh token rotation)
+    await supabase.from('refresh_tokens').delete().eq('id', activeToken.id);
+
+    // 5. Generate new access token and fresh refresh token
+    const token = generateAccessToken(user);
+    await generateAndSetRefreshToken(req, res, user.id);
+
+    return res.status(200).json({ token, user });
+  } catch (err) {
+    console.error('Error in refresh-token:', err);
+    return res.status(500).json({ error: 'Failed to refresh token.' });
+  }
+});
+
+/**
+ * Endpoint: Logout User (Clears HttpOnly cookie & DB refresh record)
+ * POST /api/auth/logout
+ */
+app.post('/api/auth/logout', async (req, res) => {
+  const refreshToken = req.cookies.mbc_refresh_token;
+  if (refreshToken) {
+    try {
+      await supabase.from('refresh_tokens').delete().eq('token', refreshToken);
+    } catch (err) {
+      console.error('Failed to purge refresh token on logout:', err);
+    }
+  }
+  res.clearCookie('mbc_refresh_token', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production' || req.secure || req.headers['x-forwarded-proto'] === 'https',
+    sameSite: 'strict',
+    path: '/',
+    domain: process.env.COOKIE_DOMAIN || undefined
+  });
+  return res.status(200).json({ message: 'Logged out successfully.' });
 });
 
 /**
@@ -334,7 +524,47 @@ app.post('/api/bookings', async (req, res) => {
       .select();
 
     if (error) throw error;
-    return res.status(201).json(newBooking[0]);
+
+    const created = newBooking[0];
+    const bookingId = created.id.slice(-6).toUpperCase();
+
+    // Generate WhatsApp Notification Messages
+    const customerMsg = `🏗️ MBC - Mahathi Building Contractors
+
+Hello ${contact_name},
+
+Your booking has been successfully received.
+
+🔖 Booking ID: ${bookingId}
+🛠️ Service: ${service_name}
+📅 Date: ${date}
+🕐 Time: ${time_slot}
+📍 Location: ${address}
+
+Our team will contact you shortly.
+Thank you for choosing MBC.
+
+"Today Under Construction. Tomorrow Your Dream Home."`;
+
+    const adminMsg = `🔔 New Booking Alert — MBC
+
+Booking ID: ${bookingId}
+Service: ${service_name}
+Customer: ${contact_name}
+Phone: ${contact_phone}
+Date: ${date} | ${time_slot}
+Location: ${address}
+Status: Pending`;
+
+    // Trigger WhatsApp Delivery asynchronously (do not block client HTTP response)
+    sendWhatsApp(contact_phone, customerMsg).catch(err => console.error('Error sending customer WhatsApp:', err));
+
+    const adminPhones = (process.env.ADMIN_NUMBERS || '8688074469,9398158902').split(',');
+    adminPhones.forEach(adminPhone => {
+      sendWhatsApp(adminPhone, adminMsg).catch(err => console.error(`Error sending admin WhatsApp to ${adminPhone}:`, err));
+    });
+
+    return res.status(201).json(created);
   } catch (err) {
     console.error('Error creating booking:', err);
     return res.status(500).json({ error: 'Booking submission failed.' });
@@ -366,7 +596,59 @@ app.patch('/api/bookings/:id', verifyToken, verifyAdmin, async (req, res) => {
       return res.status(404).json({ error: 'Booking not found.' });
     }
 
-    return res.status(200).json(updatedBooking[0]);
+    const updated = updatedBooking[0];
+    const bookingId = updated.id.slice(-6).toUpperCase();
+
+    // Trigger WhatsApp notifications based on new status
+    if (status === 'confirmed') {
+      const custMsg = `🏗️ MBC - Mahathi Building Contractors
+
+Hello ${updated.contact_name},
+
+Your booking has been CONFIRMED!
+
+🔖 Booking ID: ${bookingId}
+🛠️ Service: ${updated.service_name}
+📅 Date: ${updated.date}
+🕐 Time: ${updated.time_slot}
+📍 Location: ${updated.address}
+
+We look forward to serving you.
+For queries: 📞 8688074469`;
+
+      sendWhatsApp(updated.contact_phone, custMsg).catch(err => console.error('Error sending customer confirm WhatsApp:', err));
+    } else if (status === 'completed') {
+      const custMsg = `🏗️ MBC - Mahathi Building Contractors
+
+Hello ${updated.contact_name},
+
+Your booking has been marked as COMPLETED!
+
+🔖 Booking ID: ${bookingId}
+🛠️ Service: ${updated.service_name}
+📅 Date: ${updated.date}
+
+Thank you for choosing Mahathi Building Contractors. We hope you are satisfied with our services!
+For feedback: 📞 8688074469`;
+
+      sendWhatsApp(updated.contact_phone, custMsg).catch(err => console.error('Error sending customer complete WhatsApp:', err));
+    } else if (status === 'cancelled') {
+      const adminMsg = `❌ Booking Cancelled Alert — MBC
+
+Booking ID: ${bookingId}
+Service: ${updated.service_name}
+Customer: ${updated.contact_name}
+Phone: ${updated.contact_phone}
+Date: ${updated.date} | ${updated.time_slot}
+Status: Cancelled`;
+
+      const adminPhones = (process.env.ADMIN_NUMBERS || '8688074469,9398158902').split(',');
+      adminPhones.forEach(adminPhone => {
+        sendWhatsApp(adminPhone, adminMsg).catch(err => console.error(`Error sending cancel admin WhatsApp to ${adminPhone}:`, err));
+      });
+    }
+
+    return res.status(200).json(updated);
   } catch (err) {
     console.error('Error updating booking:', err);
     return res.status(500).json({ error: 'Failed to update booking status.' });

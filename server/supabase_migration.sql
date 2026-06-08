@@ -139,3 +139,22 @@ ON reviews FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 CREATE POLICY "Allow public reading of reviews" 
 ON reviews FOR SELECT TO anon, authenticated USING (true);
+
+-- ============================================================================
+-- 7. Refresh Tokens Table & Policies
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS refresh_tokens (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token VARCHAR(255) UNIQUE NOT NULL,
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_refresh_tokens_token ON refresh_tokens(token);
+
+ALTER TABLE refresh_tokens ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Allow service role full access on refresh_tokens" 
+ON refresh_tokens FOR ALL TO service_role USING (true) WITH CHECK (true);
