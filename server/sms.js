@@ -27,20 +27,33 @@ export async function sendSMS(mobileNumber, otp) {
     return true;
   }
 
-  if (provider === 'msg91') {
-    const authKey = process.env.MSG91_AUTH_KEY;
-    const templateId = process.env.MSG91_TEMPLATE_ID;
+if (provider === 'msg91') {
+  const authKey = process.env.MSG91_AUTH_KEY;
+  const templateId = process.env.MSG91_TEMPLATE_ID;
 
-    if (!authKey || !templateId) {
-      console.error('[SMS Error] MSG91 credentials (MSG91_AUTH_KEY, MSG91_TEMPLATE_ID) missing!');
-      throw new Error('SMS configuration error on server');
-    }
+  console.log("524283Ax6NwDTZ6a26e34dP1", !!authKey);
+  console.log("6a26f22de42d6a7f44048f32", templateId);
+  console.log("MOBILE:", formattedNumber);
+  console.log("OTP:", otp);
 
-    try {
+  if (!authKey || !templateId) {
+    console.error('[SMS Error] MSG91 credentials (MSG91_AUTH_KEY, MSG91_TEMPLATE_ID) missing!');
+    throw new Error('SMS configuration error on server');
+  }
+
+  try {
       // MSG91 OTP endpoint
       const url = `https://control.msg91.com/api/v5/otp?template_id=${templateId}&mobile=${formattedNumber}&authkey=${authKey}&otp=${otp}`;
       const res = await fetch(url, { method: 'POST' });
-      const data = await res.json();
+      const text = await res.text();
+console.log("MSG91 RESPONSE:", text);
+
+let data;
+try {
+  data = JSON.parse(text);
+} catch {
+  data = { raw: text };
+}
       
       if (res.ok && data.type === 'success') {
         console.log(`[SMS Msg91] Successfully sent OTP to ${mobileNumber}`);

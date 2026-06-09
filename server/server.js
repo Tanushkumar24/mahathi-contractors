@@ -1,3 +1,4 @@
+
 import express from 'express';
 import cors from 'cors';
 import jwt from 'jsonwebtoken';
@@ -14,6 +15,8 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+
+
 const JWT_SECRET = process.env.JWT_SECRET;
 const ADMIN_NUMBERS = (process.env.ADMIN_NUMBERS || '8688074469,9398158902').split(',');
 
@@ -883,15 +886,15 @@ app.post('/api/ai/chat', async (req, res) => {
 
 app.get('/', (req, res) => {
   res.json({
-    success: true,
-    app: 'Mahathi Contractors API',
-    status: 'Running'
+    status: 'success',
+    message: 'Mahathi Contractors API Running',
+    version: '1.0.0'
   });
 });
-
 // Start Server
-app.listen(PORT, '0.0.0.0' => {
+app.listen(PORT, () => {
   console.log(`\n==================================================`);
   console.log(`🚀 Node.js/Express Server running on port: ${PORT}`);
   console.log(`==================================================\n`);
+
 });
