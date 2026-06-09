@@ -79,6 +79,10 @@ export default function Navbar() {
 
           {/* CTA Buttons */}
           <div className="hidden lg:flex items-center gap-3">
+            <a href="tel:+918688074469" className="text-white/60 hover:text-white transition-colors">
+              <Phone className="w-4 h-4" />
+            </a>
+            
             {isAuthenticated ? (
               <Button 
                 onClick={logout} 
@@ -95,7 +99,7 @@ export default function Navbar() {
               </Link>
             )}
 
-            <Link to="/booking">
+            <Link to="/book">
               <Button className="bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white border-0 rounded-xl px-6 h-10 text-xs font-semibold shadow-lg shadow-blue-500/25">
                 Book Now
               </Button>
@@ -153,7 +157,7 @@ export default function Navbar() {
                   </Link>
                 )}
 
-                <Link to="/booking" className="block">
+                <Link to="/book" className="block">
                   <Button className="w-full bg-gradient-to-r from-blue-600 to-blue-500 text-white border-0 rounded-xl font-semibold">
                     Book Now
                   </Button>

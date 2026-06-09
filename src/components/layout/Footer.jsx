@@ -40,7 +40,7 @@ export default function Footer() {
               </div>
             </div>
             <p className="text-sm text-white/40 leading-relaxed max-w-sm mb-6">
-              Under Construction Today. Your Dream Home Tomorrow. Building premium homes and commercial spaces for over 5+ years.
+              Under Construction Today. Your Dream Home Tomorrow. Building premium homes and commercial spaces for over 20 years.
             </p>
             <div className="space-y-2">
               <a href="tel:+918688074469" className="flex items-center gap-2 text-sm text-white/50 hover:text-blue-400 transition-colors">
@@ -50,7 +50,7 @@ export default function Footer() {
                 <Mail className="w-4 h-4" /> mahathicontractors@gmail.com
               </a>
               <div className="flex items-start gap-2 text-sm text-white/50">
-                <MapPin className="w-4 h-4 mt-0.5 shrink-0" /> Hyderabad, India
+                <MapPin className="w-4 h-4 mt-0.5 shrink-0" /> Vijayawada, AP, India
               </div>
             </div>
           </div>

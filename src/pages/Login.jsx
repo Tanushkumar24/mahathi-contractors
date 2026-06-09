@@ -299,7 +299,7 @@ export default function Login() {
           <Label htmlFor="city">City / Location</Label>
           <Input
             id="city"
-            placeholder="Hyderabad"
+            placeholder="Vijayawada"
             value={city}
             onChange={(e) => setCity(e.target.value)}
             className="h-12 bg-white/5 border-white/10 text-white rounded-xl placeholder:text-white/20"

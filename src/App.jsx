@@ -26,7 +26,7 @@ const AuthenticatedApp = () => {
     return (
       <div className="fixed inset-0 flex items-center justify-center bg-[#0A0E1A]">
         <div className="flex flex-col items-center gap-3">
-          <p className="text-sm font-bold text-white font-heading">MBC</p>
+          <p className="text-sm font-bold text-white font-heading">Base44</p>
           <div className="w-8 h-8 border-2 border-blue-500/20 border-t-blue-500 rounded-full animate-spin"></div>
         </div>
       </div>
@@ -53,7 +53,7 @@ const AuthenticatedApp = () => {
         <Route path="/contact" element={<Contact />} />
         <Route path="/services/:slug" element={<ServiceDetail />} />
         <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />} />}>
-          <Route path="/booking" element={<Book />} />
+          <Route path="/book" element={<Book />} />
           <Route path="/dashboard" element={<Dashboard />} />
         </Route>
       </Route>

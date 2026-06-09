@@ -13,15 +13,15 @@ const values = [
 ];
 
 const milestones = [
-  { year: '2020', title: 'Founded', desc: 'Established in Hyderabad with a vision for premium construction' },
-  { year: '2021', title: '100 Projects', desc: 'Milestone of 100 successfully completed residential projects' },
-  { year: '2022', title: 'Interior Division', desc: 'Expanded into full interior design and modular kitchen services' },
-  { year: '2023', title: 'Smart Home', desc: 'Introduced smart home automation and modern tech solutions' },
+  { year: '2004', title: 'Founded', desc: 'MBC established in Vijayawada with a vision for premium construction' },
+  { year: '2010', title: '100 Projects', desc: 'Milestone of 100 successfully completed residential projects' },
+  { year: '2016', title: 'Interior Division', desc: 'Expanded into full interior design and modular kitchen services' },
+  { year: '2020', title: 'Smart Home', desc: 'Introduced smart home automation and modern tech solutions' },
   { year: '2024', title: '500+ Services', desc: 'Reached 500+ completed services with 4.9-star rating' },
 ];
 
 const team = [
-  { name: 'Simhadri Sampath Kumar', role: 'Founder & Sole Proprietor', desc: '5+ years of expertise in construction management, project delivery, and client relations.' },
+  { name: 'Simhadri Sampath Kumar', role: 'Founder & Sole Proprietor', desc: '20+ years of expertise in construction management, project delivery, and client relations.' },
   { name: 'Engineering Team', role: 'Project Execution', desc: '50+ skilled engineers, supervisors, and site managers ensuring quality at every stage.' },
   { name: 'Design Team', role: 'Interior & Architecture', desc: 'Creative professionals delivering functional and beautiful spaces tailored to client needs.' },
 ];
@@ -43,10 +43,10 @@ export default function About() {
               About MBC
             </span>
             <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-white font-heading leading-tight">
-              5+ Years of Building <span className="text-gradient">Excellence</span>
+              20+ Years of Building <span className="text-gradient">Excellence</span>
             </h1>
             <p className="text-lg text-white/40 mt-6 leading-relaxed">
-              Mahathi Building Contractors has been transforming dreams into structures since 2020. We combine traditional craftsmanship with modern technology to deliver premium construction experiences.
+              Mahathi Building Contractors has been transforming dreams into structures since 2004. We combine traditional craftsmanship with modern technology to deliver premium construction experiences.
             </p>
           </motion.div>
         </div>
@@ -56,7 +56,7 @@ export default function About() {
       <section className="py-16 border-y border-white/5">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
-            <AnimatedCounter end={5} suffix="+" label="Years Experience" icon={Clock} />
+            <AnimatedCounter end={20} suffix="+" label="Years Experience" icon={Clock} />
             <AnimatedCounter end={100} suffix="+" label="Happy Customers" icon={Users} />
             <AnimatedCounter end={500} suffix="+" label="Completed Services" icon={Building2} />
             <AnimatedCounter end={50} suffix="+" label="Professional Workers" icon={Award} />

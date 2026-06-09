@@ -11,8 +11,10 @@ import SectionHeader from '../components/shared/SectionHeader';
 import GlassCard from '../components/shared/GlassCard';
 
 const contactInfo = [
+  { icon: Phone, label: 'Phone', value: '+91 86880 74469', href: 'tel:+918688074469' },
+  { icon: MessageCircle, label: 'WhatsApp', value: '+91 86880 74469', href: 'https://wa.me/918688074469' },
   { icon: Mail, label: 'Email', value: 'info@mahathicontractors.in', href: 'mailto:info@mahathicontractors.in' },
-  { icon: MapPin, label: 'Location', value: 'Hyderabad, Telangana, India', href: null },
+  { icon: MapPin, label: 'Location', value: 'Vijayawada, AP, India', href: null },
   { icon: Clock, label: 'Working Hours', value: 'Mon - Sat: 9AM - 8PM', href: null },
 ];
 
@@ -71,6 +73,19 @@ export default function Contact() {
                 </GlassCard>
               ))}
 
+              {/* Quick Actions */}
+              <div className="pt-4 space-y-3">
+                <a href="https://wa.me/918688074469" target="_blank" rel="noopener noreferrer" className="block">
+                  <Button className="w-full bg-green-600/20 hover:bg-green-600/30 text-green-400 border border-green-500/20 rounded-xl h-12 font-semibold gap-2">
+                    <MessageCircle className="w-4 h-4" /> Chat on WhatsApp
+                  </Button>
+                </a>
+                <a href="tel:+918688074469" className="block">
+                  <Button className="w-full bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/20 rounded-xl h-12 font-semibold gap-2">
+                    <Phone className="w-4 h-4" /> Call Now
+                  </Button>
+                </a>
+              </div>
             </div>
 
             {/* Contact Form */}
@@ -127,7 +142,7 @@ export default function Contact() {
                     disabled={submitting}
                     className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white border-0 rounded-xl h-12 font-semibold shadow-lg shadow-blue-500/25 gap-2"
                   >
-                    {submitting ? 'Sending...' : 'Get Free Quote'}
+                    {submitting ? 'Sending...' : 'Send Message'}
                     <Send className="w-4 h-4" />
                   </Button>
                 </form>
