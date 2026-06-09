@@ -881,6 +881,14 @@ app.post('/api/ai/chat', async (req, res) => {
   }
 });
 
+app.get('/', (req, res) => {
+  res.json({
+    success: true,
+    app: 'Mahathi Contractors API',
+    status: 'Running'
+  });
+});
+
 // Start Server
 app.listen(PORT, '0.0.0.0' => {
   console.log(`\n==================================================`);
