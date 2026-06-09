@@ -521,8 +521,7 @@ app.post('/api/bookings', async (req, res) => {
         contact_phone,
         address,
         notes,
-        status: 'pending',
-        created_by_id: created_by_id || null
+        status: 'pending'
       })
       .select();
 

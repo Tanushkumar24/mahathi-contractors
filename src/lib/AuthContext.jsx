@@ -7,6 +7,7 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
+  const [isLoadingPublicSettings, setIsLoadingPublicSettings] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
   const [authError, setAuthError] = useState(null);
 
@@ -153,7 +154,9 @@ export const AuthProvider = ({ children }) => {
       registerUser,
       logout,
       navigateToLogin,
-      checkAppState
+      checkAppState,
+      checkUserAuth: checkAppState,
+      isLoadingPublicSettings
     }}>
       {children}
     </AuthContext.Provider>
