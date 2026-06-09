@@ -62,7 +62,7 @@ export default function Dashboard() {
                   <div className="text-5xl mb-4">📋</div>
                   <h3 className="text-lg font-semibold text-white mb-2">No Bookings Yet</h3>
                   <p className="text-white/40 text-sm mb-6">Book a service and track everything here.</p>
-                  <a href="/book" className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600/20 text-blue-400 border border-blue-500/30 rounded-xl text-sm font-medium hover:bg-blue-600/30 transition-colors">
+                  <a href="/booking" className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600/20 text-blue-400 border border-blue-500/30 rounded-xl text-sm font-medium hover:bg-blue-600/30 transition-colors">
                     Book a Service
                   </a>
                 </div>

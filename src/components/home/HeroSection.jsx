@@ -68,13 +68,13 @@ export default function HeroSection() {
               transition={{ duration: 0.6, delay: 0.3 }}
               className="flex flex-wrap gap-3 mt-8"
             >
-              <Link to="/book">
+              <Link to="/booking">
                 <Button size="lg" className="bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white border-0 rounded-2xl px-6 h-12 text-sm font-semibold shadow-2xl shadow-blue-500/25 gap-2 group">
                   <Calendar className="w-4 h-4" /> Book Now
                   <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                 </Button>
               </Link>
-              <Link to="/book">
+              <Link to="/booking">
                 <Button size="lg" variant="outline" className="border-white/10 text-white/70 hover:text-white hover:bg-white/5 rounded-2xl px-6 h-12 text-sm font-semibold gap-2">
                   <ClipboardList className="w-4 h-4" /> Book Site Visit
                 </Button>

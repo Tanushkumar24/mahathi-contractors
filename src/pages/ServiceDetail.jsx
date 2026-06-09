@@ -388,7 +388,7 @@ export default function ServiceDetail() {
                 <p className="text-sm text-white/40 mb-5 leading-relaxed">
                   Our team will contact you to confirm details and provide a custom quote. No upfront payment required.
                 </p>
-                <Link to="/book" className="block mb-3">
+                <Link to="/booking" className="block mb-3">
                   <Button className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white border-0 rounded-xl h-12 font-semibold shadow-lg shadow-blue-500/25 gap-2">
                     Book Now — Free Consultation <ArrowRight className="w-4 h-4" />
                   </Button>

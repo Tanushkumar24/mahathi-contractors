@@ -95,7 +95,7 @@ export default function Navbar() {
               </Link>
             )}
 
-            <Link to="/book">
+            <Link to="/booking">
               <Button className="bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white border-0 rounded-xl px-6 h-10 text-xs font-semibold shadow-lg shadow-blue-500/25">
                 Book Now
               </Button>
@@ -153,7 +153,7 @@ export default function Navbar() {
                   </Link>
                 )}
 
-                <Link to="/book" className="block">
+                <Link to="/booking" className="block">
                   <Button className="w-full bg-gradient-to-r from-blue-600 to-blue-500 text-white border-0 rounded-xl font-semibold">
                     Book Now
                   </Button>
