@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Calendar, Clock, MapPin, Camera, FileText, Check, ArrowRight, ArrowLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
