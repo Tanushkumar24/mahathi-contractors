@@ -639,8 +639,8 @@ export default function AdminDashboard() {
         {/* Logo */}
         <div className="p-6 border-b border-white/5">
           <div>
-            <p className="text-base font-bold text-white font-heading">Base44 Admin</p>
-            <p className="text-[10px] text-blue-400/70 -mt-1 tracking-widest uppercase">Base44 App</p>
+            <p className="text-base font-bold text-white font-heading">MBC Admin</p>
+            <p className="text-[10px] text-blue-400/70 -mt-1 tracking-widest uppercase">MBC App</p>
           </div>
         </div>
 

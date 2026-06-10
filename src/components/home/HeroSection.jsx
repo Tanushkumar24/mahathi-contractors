@@ -36,7 +36,7 @@ export default function HeroSection() {
               className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-blue-500/10 border border-blue-500/20 mb-8"
             >
               <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
-              <span className="text-xs font-medium text-blue-400 tracking-wide">Base44 — Since 2004</span>
+              <span className="text-xs font-medium text-blue-400 tracking-wide">MBC — Since 2020</span>
             </motion.div>
 
             <motion.h1
@@ -86,20 +86,7 @@ export default function HeroSection() {
               </Link>
             </motion.div>
 
-            {/* Quick Contact */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.6, delay: 0.4 }}
-              className="mt-6 flex flex-wrap gap-3"
-            >
-              <a href="tel:+918688074469" className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-500/10 border border-blue-500/20 text-sm text-blue-400 hover:bg-blue-500/20 transition-colors">
-                <Phone className="w-4 h-4" /> 8688074469
-              </a>
-              <a href="https://wa.me/918688074469" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-4 py-2 rounded-xl bg-green-500/10 border border-green-500/20 text-sm text-green-400 hover:bg-green-500/20 transition-colors">
-                <MessageCircle className="w-4 h-4" /> WhatsApp
-              </a>
-            </motion.div>
+
           </div>
 
           {/* Right - Services + Contact */}

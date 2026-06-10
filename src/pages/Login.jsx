@@ -74,7 +74,7 @@ export default function Login() {
 
       if (res.userExists) {
         toast.success("Logged in successfully!");
-        window.location.href = "/";
+        window.location.href = res.user?.role === 'admin' ? '/admin' : '/';
       } else {
         // First-time user: transition to profile registration
         setStep("register");
@@ -115,9 +115,9 @@ export default function Login() {
     setLoading(true);
     try {
       const cleanNumber = mobileNumber.replace(/\D/g, "");
-      await registerUser(fullName.trim(), cleanNumber, city.trim());
+      const registerRes = await registerUser(fullName.trim(), cleanNumber, city.trim());
       toast.success("Account created successfully!");
-      window.location.href = "/";
+      window.location.href = registerRes.user?.role === 'admin' ? '/admin' : '/';
     } catch (err) {
       setError(err.message || "Profile creation failed.");
     } finally {
@@ -138,7 +138,6 @@ export default function Login() {
   if (step === "phone") {
     return (
       <AuthLayout
-        icon={Phone}
         title="Mobile Login"
         subtitle="Enter your mobile number to receive an OTP code"
       >
