@@ -43,10 +43,27 @@ if (provider === 'msg91') {
 
   try {
       // MSG91 OTP endpoint
-      const url = `https://control.msg91.com/api/v5/otp?template_id=${templateId}&mobile=${formattedNumber}&authkey=${authKey}&otp=${otp}`;
-      const res = await fetch(url, { method: 'POST' });
+      const url = `https://control.msg91.com/api/v5/otp`;
+
+const res = await fetch(url, {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    template_id: templateId,
+    mobile: formattedNumber,
+    authkey: authKey,
+    otp: otp
+  })
+});
       const text = await res.text();
 console.log("MSG91 RESPONSE:", text);
+console.log({
+  templateId,
+  formattedNumber,
+  authKeyExists: !!authKey
+});
 
 let data;
 try {
