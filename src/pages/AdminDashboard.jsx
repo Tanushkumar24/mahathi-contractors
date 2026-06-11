@@ -537,13 +537,13 @@ function DashboardHome({ bookings, stats }) {
         </div>
 
         <div className="glass rounded-2xl p-6">
-          <h3 className="text-sm font-semibold text-white mb-4">Recent OTP Logins</h3>
+          <h3 className="text-sm font-semibold text-white mb-4">Recent Users</h3>
           {stats.recentLogins && stats.recentLogins.length > 0 ? (
             stats.recentLogins.slice(0, 5).map((login, idx) => (
               <div key={idx} className="flex items-center justify-between py-3 border-b border-white/5 last:border-0">
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-blue-400 bg-blue-500/10 w-6 h-6 rounded-lg flex items-center justify-center font-bold">✓</span>
-                  <p className="text-sm text-white font-medium">{login.mobile_number}</p>
+                  <p className="text-sm text-white font-medium">{login.name || login.mobile_number}</p>
                 </div>
                 <span className="text-xs text-white/30">
                   {format(new Date(login.created_at), 'dd MMM hh:mm a')}
@@ -551,7 +551,7 @@ function DashboardHome({ bookings, stats }) {
               </div>
             ))
           ) : (
-            <p className="text-sm text-white/30 text-center py-4">No recent logins.</p>
+            <p className="text-sm text-white/30 text-center py-4">No recent users.</p>
           )}
         </div>
       </div>

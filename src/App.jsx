@@ -68,17 +68,10 @@ const AuthenticatedApp = () => {
   );
 };
 
+import OtpLogin from "./components/OtpLogin";
+
 function App() {
-  return (
-    <AuthProvider>
-      <QueryClientProvider client={queryClientInstance}>
-        <Router>
-          <AuthenticatedApp />
-        </Router>
-        <Toaster />
-      </QueryClientProvider>
-    </AuthProvider>
-  )
+  return <OtpLogin />;
 }
 
-export default App
+export default App;

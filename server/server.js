@@ -1,4 +1,3 @@
-
 import express from 'express';
 import cors from 'cors';
 import jwt from 'jsonwebtoken';
@@ -7,9 +6,9 @@ import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import { supabase } from './supabase.js';
-import { sendSMS } from './sms.js';
 import { sendWhatsApp } from './whatsapp.js';
 import { verifyToken, verifyAdmin } from './authMiddleware.js';
+import admin from './firebase-admin.js';
 
 dotenv.config();
 
@@ -17,7 +16,6 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 app.set('trust proxy', 1);
-
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const ADMIN_NUMBERS = (process.env.ADMIN_NUMBERS || '8688074469,9398158902').split(',');
@@ -90,9 +88,6 @@ function sanitizeInput(req, res, next) {
 }
 app.use(sanitizeInput);
 
-// Request validator utility
-const isValidMobile = (num) => /^[6-9]\d{9}$/.test(num);
-
 // JWT & Refresh Token Helpers
 const generateAccessToken = (user) => {
   return jwt.sign(
@@ -136,189 +131,105 @@ const generateAndSetRefreshToken = async (req, res, userId) => {
 // ============================================================================
 
 /**
- * Endpoint: Send OTP
- * POST /api/auth/send-otp
+ * Helper: strip country code from Firebase phone number
+ * e.g. "+918688074469" -> "8688074469"
  */
-app.post('/api/auth/send-otp', async (req, res) => {
-  const { mobile_number } = req.body;
-
-  if (!mobile_number || !isValidMobile(mobile_number)) {
-    return res.status(400).json({ error: 'Invalid mobile number. Please enter a valid 10-digit number.' });
+function extractMobile(phoneNumber) {
+  if (!phoneNumber) return null;
+  const cleaned = phoneNumber.replace(/\D/g, '');
+  // Remove leading 91 (India country code) if present
+  if (cleaned.startsWith('91') && cleaned.length === 12) {
+    return cleaned.slice(2);
   }
-
-  try {
-    // 1. Rate Limiting: Check if OTP was sent to this phone in the last 60 seconds
-    const oneMinAgo = new Date(Date.now() - 60 * 1000).toISOString();
-    const { data: recentOtps, error: rateError } = await supabase
-      .from('otp_verifications')
-      .select('created_at')
-      .eq('mobile_number', mobile_number)
-      .gt('created_at', oneMinAgo);
-
-    if (rateError) throw rateError;
-
-    if (recentOtps && recentOtps.length > 0) {
-      return res.status(429).json({ error: 'Please wait 60 seconds before requesting a new OTP.' });
-    }
-
-    // 2. Spam Check: Max 5 OTP requests per 15 minutes
-    const fifteenMinAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
-    const { count: spamCount, error: spamError } = await supabase
-      .from('otp_verifications')
-      .select('id', { count: 'exact', head: true })
-      .eq('mobile_number', mobile_number)
-      .gt('created_at', fifteenMinAgo);
-
-    if (spamError) throw spamError;
-
-    if (spamCount && spamCount >= 5) {
-      return res.status(429).json({ error: 'Too many requests. Please try again after 15 minutes.' });
-    }
-
-    // 3. Generate 6-digit OTP
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString(); // 5 min expiry
-
-    // 4. Save to Supabase
-    const { error: insertError } = await supabase
-      .from('otp_verifications')
-      .insert({
-        mobile_number,
-        otp,
-        expires_at: expiresAt,
-        verified: false,
-        attempts: 0
-      });
-
-    if (insertError) throw insertError;
-
-    // 5. Send SMS OTP (mock in development, MSG91/Twilio in production)
-    await sendSMS(mobile_number, otp);
-
-    return res.status(200).json({ message: 'OTP sent successfully.' });
-  } catch (err) {
-    console.error('Error in send-otp:', err);
-    return res.status(500).json({ error: 'Failed to send OTP. Please try again.' });
-  }
-});
+  return cleaned;
+}
 
 /**
- * Endpoint: Verify OTP
- * POST /api/auth/verify-otp
+ * Endpoint: Firebase Phone Auth Login
+ * POST /api/auth/firebase-login
  */
-app.post('/api/auth/verify-otp', async (req, res) => {
-  const { mobile_number, otp } = req.body;
+app.post('/api/auth/firebase-login', async (req, res) => {
+  const { firebaseToken } = req.body;
 
-  if (!mobile_number || !isValidMobile(mobile_number) || !otp || otp.length !== 6) {
-    return res.status(400).json({ error: 'Mobile number and 6-digit OTP code are required.' });
+  if (!firebaseToken) {
+    return res.status(400).json({ error: 'Firebase token is required.' });
   }
 
   try {
-    // 1. Fetch the latest unverified OTP code
-    const { data: records, error: fetchError } = await supabase
-      .from('otp_verifications')
-      .select('*')
-      .eq('mobile_number', mobile_number)
-      .eq('verified', false)
-      .order('created_at', { ascending: false })
-      .limit(1);
+    // 1. Verify Firebase ID token
+    const decodedToken = await admin.auth().verifyIdToken(firebaseToken);
+    const firebasePhone = decodedToken.phone_number;
 
-    if (fetchError) throw fetchError;
-
-    if (!records || records.length === 0) {
-      return res.status(400).json({ error: 'No OTP requested for this mobile number or OTP already used.' });
+    if (!firebasePhone) {
+      return res.status(400).json({ error: 'No phone number associated with this Firebase account.' });
     }
 
-    const activeOtp = records[0];
+    const mobileNumber = extractMobile(firebasePhone);
 
-    // 2. Anti-brute force: check attempts
-    if (activeOtp.attempts >= 3) {
-      return res.status(400).json({ error: 'This OTP is locked due to too many failed attempts. Please request a new one.' });
+    if (!mobileNumber || mobileNumber.length !== 10) {
+      return res.status(400).json({ error: 'Invalid phone number from Firebase.' });
     }
 
-    // 3. Expiry Check
-    if (new Date() > new Date(activeOtp.expires_at)) {
-      return res.status(400).json({ error: 'OTP expired. Please request a new code.' });
-    }
-
-    // 4. Match validation
-    if (activeOtp.otp !== otp) {
-      // Increment failed attempts
-      await supabase
-        .from('otp_verifications')
-        .update({ attempts: activeOtp.attempts + 1 })
-        .eq('id', activeOtp.id);
-
-      const remaining = 3 - (activeOtp.attempts + 1);
-      return res.status(400).json({ error: `Incorrect OTP. ${remaining} attempts remaining.` });
-    }
-
-    // 5. Success: mark verified to prevent reuse
-    const { error: updateError } = await supabase
-      .from('otp_verifications')
-      .update({ verified: true })
-      .eq('id', activeOtp.id);
-
-    if (updateError) throw updateError;
-
-    // 6. Check if user already exists
+    // 2. Check if user already exists in our database
     const { data: users, error: userError } = await supabase
       .from('users')
       .select('*')
-      .eq('mobile_number', mobile_number)
+      .eq('mobile_number', mobileNumber)
       .limit(1);
 
     if (userError) throw userError;
 
     if (users && users.length > 0) {
-      // Existing User -> Issue JWT session
       const user = users[0];
       const token = generateAccessToken(user);
       await generateAndSetRefreshToken(req, res, user.id);
       return res.status(200).json({ userExists: true, token, user });
     } else {
-      // First time user -> Redirect to profile completion
-      return res.status(200).json({ userExists: false, verifiedMobile: mobile_number });
+      return res.status(200).json({ userExists: false, phoneNumber: firebasePhone });
     }
   } catch (err) {
-    console.error('Error in verify-otp:', err);
-    return res.status(500).json({ error: 'Failed to verify OTP. Please try again.' });
+    console.error('Error in firebase-login:', err);
+    if (err.code === 'auth/id-token-expired') {
+      return res.status(401).json({ error: 'Firebase token expired. Please login again.' });
+    }
+    if (err.code === 'auth/argument-error') {
+      return res.status(400).json({ error: 'Invalid Firebase token format.' });
+    }
+    return res.status(500).json({ error: 'Authentication failed.' });
   }
 });
 
 /**
- * Endpoint: Register User Profile (For first-time OTP verified users)
+ * Endpoint: Register User Profile (Firebase-verified users only)
  * POST /api/auth/register
  */
 app.post('/api/auth/register', async (req, res) => {
-  const { mobile_number, name, city } = req.body;
+  const { name, city, firebaseToken } = req.body;
 
-  if (!mobile_number || !isValidMobile(mobile_number) || !name || !city) {
-    return res.status(400).json({ error: 'All fields (Name, Mobile, City) are required.' });
+  if (!name || !city || !firebaseToken) {
+    return res.status(400).json({ error: 'All fields (Name, City) and Firebase token are required.' });
   }
 
   try {
-    // 1. Confirm mobile was verified (OTP verified within last 10 minutes)
-    const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-    const { data: verifyLogs, error: logError } = await supabase
-      .from('otp_verifications')
-      .select('id')
-      .eq('mobile_number', mobile_number)
-      .eq('verified', true)
-      .gt('created_at', tenMinAgo)
-      .limit(1);
+    // 1. Verify Firebase ID token to confirm phone number
+    const decodedToken = await admin.auth().verifyIdToken(firebaseToken);
+    const firebasePhone = decodedToken.phone_number;
 
-    if (logError) throw logError;
+    if (!firebasePhone) {
+      return res.status(400).json({ error: 'No phone number associated with this Firebase account.' });
+    }
 
-    if (!verifyLogs || verifyLogs.length === 0) {
-      return res.status(400).json({ error: 'Authentication timeout. Please verify your mobile number via OTP again.' });
+    const mobileNumber = extractMobile(firebasePhone);
+
+    if (!mobileNumber || mobileNumber.length !== 10) {
+      return res.status(400).json({ error: 'Invalid phone number from Firebase.' });
     }
 
     // 2. Prevent duplicate user profiles
     const { data: checkUsers, error: checkError } = await supabase
       .from('users')
       .select('id')
-      .eq('mobile_number', mobile_number)
+      .eq('mobile_number', mobileNumber)
       .limit(1);
 
     if (checkError) throw checkError;
@@ -328,14 +239,14 @@ app.post('/api/auth/register', async (req, res) => {
     }
 
     // 3. Assign role ('admin' if number is in ADMIN_NUMBERS, else 'user')
-    const role = ADMIN_NUMBERS.includes(mobile_number) ? 'admin' : 'user';
+    const role = ADMIN_NUMBERS.includes(mobileNumber) ? 'admin' : 'user';
 
     // 4. Create user row
     const { data: newUser, error: registerError } = await supabase
       .from('users')
       .insert({
         name,
-        mobile_number,
+        mobile_number: mobileNumber,
         city,
         role
       })
@@ -352,6 +263,9 @@ app.post('/api/auth/register', async (req, res) => {
     return res.status(201).json({ token, user });
   } catch (err) {
     console.error('Error in register:', err);
+    if (err.code === 'auth/id-token-expired') {
+      return res.status(401).json({ error: 'Session expired. Please verify your phone again.' });
+    }
     return res.status(500).json({ error: 'Registration failed. Please try again.' });
   }
 });
@@ -849,20 +763,19 @@ app.get('/api/admin/stats', verifyToken, verifyAdmin, async (req, res) => {
 
     if (bookingError) throw bookingError;
 
-    // 3. Get recent verified OTP requests (OTP Logins)
-    const { data: recentLogins, error: otpError } = await supabase
-      .from('otp_verifications')
-      .select('mobile_number, created_at')
-      .eq('verified', true)
+    // 3. Get recent user registrations
+    const { data: recentUsers, error: usersError } = await supabase
+      .from('users')
+      .select('mobile_number, created_at, name')
       .order('created_at', { ascending: false })
       .limit(10);
 
-    if (otpError) throw otpError;
+    if (usersError) throw usersError;
 
     return res.status(200).json({
       totalUsers: userCount || 0,
       bookings,
-      recentLogins: recentLogins || []
+      recentLogins: recentUsers || []
     });
   } catch (err) {
     console.error('Error fetching stats overview:', err);

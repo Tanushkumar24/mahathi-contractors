@@ -1,5 +1,6 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import api from './api';
+import { auth } from './firebase';
 
 const AuthContext = createContext();
 
@@ -28,26 +29,21 @@ export const AuthProvider = ({ children }) => {
     }
 
     try {
-      // Decode stored user as immediate fallback
       setUser(JSON.parse(storedUser));
       setIsAuthenticated(true);
 
-      // Verify token freshness against backend API
       const res = await api.get('/api/auth/me');
       const freshUser = res.data;
-      
-      // Update with fresh database details
+
       setUser(freshUser);
       localStorage.setItem('mbc_user_session', JSON.stringify(freshUser));
     } catch (err) {
       console.error('Session verification failed, logging out...', err);
-      // Clean storage if token is invalid or expired
       localStorage.removeItem('mbc_jwt_token');
       localStorage.removeItem('mbc_user_session');
       setUser(null);
       setIsAuthenticated(false);
-      
-      // Setup auth required error if they are on a protected path
+
       const publicPaths = ['/login', '/about', '/services', '/projects', '/reviews', '/contact', '/'];
       if (!publicPaths.includes(window.location.pathname) && !window.location.pathname.startsWith('/services/')) {
         setAuthError({ type: 'auth_required', message: 'Authentication expired.' });
@@ -58,26 +54,10 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  /**
-   * Triggers OTP generation and delivery on the Express backend
-   */
-  const sendOtp = async (mobileNumber) => {
+  const firebaseLogin = async (firebaseToken) => {
     try {
-      const res = await api.post('/api/auth/send-otp', { mobile_number: mobileNumber });
-      return res.data;
-    } catch (err) {
-      const errorMsg = err.response?.data?.error || 'Failed to send OTP. Please try again.';
-      throw new Error(errorMsg);
-    }
-  };
-
-  /**
-   * Verifies OTP and returns user profile existence flag
-   */
-  const verifyOtp = async (mobileNumber, otp) => {
-    try {
-      const res = await api.post('/api/auth/verify-otp', { mobile_number: mobileNumber, otp });
-      const { userExists, token, user: loggedUser } = res.data;
+      const res = await api.post('/api/auth/firebase-login', { firebaseToken });
+      const { userExists, token, user: loggedUser, phoneNumber } = res.data;
 
       if (userExists && token && loggedUser) {
         localStorage.setItem('mbc_jwt_token', token);
@@ -86,23 +66,20 @@ export const AuthProvider = ({ children }) => {
         setIsAuthenticated(true);
         setAuthError(null);
       }
-      
-      return res.data; // { userExists, token, user } or { userExists: false, verifiedMobile }
+
+      return { userExists, phoneNumber, user: loggedUser || null };
     } catch (err) {
-      const errorMsg = err.response?.data?.error || 'Incorrect OTP code. Please try again.';
+      const errorMsg = err.response?.data?.error || 'Login failed. Please try again.';
       throw new Error(errorMsg);
     }
   };
 
-  /**
-   * Registers a first-time user profile
-   */
-  const registerUser = async (name, mobileNumber, city) => {
+  const registerUser = async (name, city, firebaseToken) => {
     try {
       const res = await api.post('/api/auth/register', {
         name,
-        mobile_number: mobileNumber,
-        city
+        city,
+        firebaseToken
       });
       const { token, user: createdUser } = res.data;
 
@@ -121,9 +98,6 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  /**
-   * Logs out user and clears local session
-   */
   const logout = async () => {
     try {
       await api.post('/api/auth/logout');
@@ -149,8 +123,7 @@ export const AuthProvider = ({ children }) => {
       isLoadingAuth,
       authError,
       authChecked,
-      sendOtp,
-      verifyOtp,
+      firebaseLogin,
       registerUser,
       logout,
       navigateToLogin,
