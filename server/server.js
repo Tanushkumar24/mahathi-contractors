@@ -213,7 +213,7 @@ async function hasVerifiedEmailOtp(email) {
 const isMissingEmailVerifiedColumn = (error) =>
   /email_verified|schema cache.*email_verified/i.test(error?.message || '');
 
-const OPTIONAL_USER_COLUMNS = ['firebase_uid', 'photo_url', 'email_verified'];
+const OPTIONAL_USER_COLUMNS = ['firebase_uid', 'photo_url', 'email_verified', 'city', 'mobile_number'];
 
 const removePayloadKeys = (payload, keys) => {
   const next = { ...payload };
@@ -225,17 +225,27 @@ const removePayloadKeys = (payload, keys) => {
 
 const getMissingUserColumns = (error) => {
   const message = error?.message || '';
-  return OPTIONAL_USER_COLUMNS.filter((column) =>
+  const knownMissingColumns = OPTIONAL_USER_COLUMNS.filter((column) =>
     new RegExp(`${column}|schema cache.*${column}|column .*${column}`, 'i').test(message)
   );
+  const quotedColumn = message.match(/'([^']+)' column|column "([^"]+)"/i);
+  const parsedColumn = quotedColumn?.[1] || quotedColumn?.[2];
+
+  if (parsedColumn && OPTIONAL_USER_COLUMNS.includes(parsedColumn) && !knownMissingColumns.includes(parsedColumn)) {
+    knownMissingColumns.push(parsedColumn);
+  }
+
+  return knownMissingColumns;
 };
 
 async function insertUserProfile(payload) {
   let createPayload = { ...payload };
   let result = await supabase.from('users').insert(createPayload).select();
 
-  const missingColumns = getMissingUserColumns(result.error);
-  if (result.error && missingColumns.length > 0) {
+  for (let retries = 0; result.error && retries < OPTIONAL_USER_COLUMNS.length; retries += 1) {
+    const missingColumns = getMissingUserColumns(result.error);
+    if (missingColumns.length === 0) break;
+
     console.warn('[users] Optional columns missing. Retrying user insert without:', missingColumns);
     createPayload = removePayloadKeys(createPayload, missingColumns);
     result = await supabase.from('users').insert(createPayload).select();
@@ -468,10 +478,12 @@ app.post('/api/auth/firebase-login', async (req, res) => {
     const { user: existingUser, error: queryError } = await findUserProfileByEmail(email);
 
     if (queryError) {
-      return res.status(500).json({
-        code: 'SUPABASE_USER_SELECT_FAILED',
-        error: 'Failed to load user profile.',
-        details: queryError.message
+      console.warn('[firebase-login] User lookup failed. Attempting profile create as fallback.', {
+        email,
+        message: queryError.message,
+        details: queryError.details,
+        hint: queryError.hint,
+        code: queryError.code
       });
     }
 
@@ -493,7 +505,9 @@ app.post('/api/auth/firebase-login', async (req, res) => {
         return res.status(500).json({
           code: 'SUPABASE_USER_INSERT_FAILED',
           error: 'Failed to create user profile.',
-          details: createResult.error.message
+          details: createResult.error.message,
+          supabaseCode: createResult.error.code,
+          hint: createResult.error.hint
         });
       }
 

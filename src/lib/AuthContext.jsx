@@ -87,9 +87,12 @@ export const AuthProvider = ({ children }) => {
       }
       throw new Error('Login failed. Please try again.');
     } catch (err) {
-      const errorMsg = err.response?.data?.error || 'Login failed. Please try again.';
+      const backendError = err.response?.data;
+      const errorMsg = backendError?.details
+        ? `${backendError.error || 'Login failed.'} ${backendError.details}`
+        : backendError?.error || 'Login failed. Please try again.';
       const wrappedError = new Error(errorMsg);
-      wrappedError.code = err.response?.data?.code;
+      wrappedError.code = backendError?.code;
       throw wrappedError;
     }
   };
