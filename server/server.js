@@ -145,11 +145,13 @@ const generateAndSetRefreshToken = async (req, res, userId) => {
 function extractMobile(phoneNumber) {
   if (!phoneNumber) return null;
   const cleaned = phoneNumber.replace(/\D/g, '');
-  // Remove leading 91 (India country code) if present
   if (cleaned.startsWith('91') && cleaned.length === 12) {
-    return cleaned.slice(2);
+    return `+${cleaned}`;
   }
-  return cleaned;
+  if (cleaned.length === 10) {
+    return `+91${cleaned}`;
+  }
+  return cleaned ? `+${cleaned}` : null;
 }
 
 /**

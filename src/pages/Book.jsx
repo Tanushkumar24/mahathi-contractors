@@ -28,6 +28,8 @@ const steps = [
   { label: 'Confirm', icon: Check },
 ];
 
+const cleanMobile = (value) => value.replace(/\D/g, '').slice(0, 10);
+
 export default function Book() {
   const { user } = useAuth();
   const [step, setStep] = useState(0);
@@ -48,7 +50,7 @@ export default function Book() {
       setBooking((prev) => ({
         ...prev,
         contact_name: prev.contact_name || user.name || '',
-        contact_phone: prev.contact_phone || user.mobile_number || '',
+        contact_phone: prev.contact_phone || cleanMobile(user.mobile_number || ''),
       }));
     }
   }, [user]);
@@ -58,15 +60,21 @@ export default function Book() {
   const canProceed = () => {
     if (step === 0) return booking.service_name;
     if (step === 1) return booking.date && booking.time_slot;
-    if (step === 2) return booking.contact_name && booking.contact_phone && booking.address;
+    if (step === 2) return booking.contact_name && booking.contact_phone.length === 10 && booking.address;
     return true;
   };
 
   const handleSubmit = async () => {
+    if (booking.contact_phone.length !== 10) {
+      toast.error('Please enter exactly 10 digits for mobile number.');
+      return;
+    }
+
     setSubmitting(true);
     try {
       await api.post('/api/bookings', {
         ...booking,
+        contact_phone: `+91${booking.contact_phone}`,
         created_by_id: user?.id || null,
       });
       toast.success('Booking received. Our team will contact you shortly.');
@@ -182,7 +190,18 @@ export default function Book() {
                 <p className="mb-6 mt-2 text-sm text-white/45">No verification code required. We use these details only to coordinate your booking.</p>
                 <div className="space-y-4">
                   <Input placeholder="Full Name *" value={booking.contact_name} onChange={(e) => setBooking({ ...booking, contact_name: e.target.value })} className="h-12 rounded-xl border-white/10 bg-white/5 text-white placeholder:text-white/30" />
-                  <Input placeholder="Mobile Number *" value={booking.contact_phone} onChange={(e) => setBooking({ ...booking, contact_phone: e.target.value })} className="h-12 rounded-xl border-white/10 bg-white/5 text-white placeholder:text-white/30" />
+                  <div className="flex h-12 overflow-hidden rounded-xl border border-white/10 bg-white/5">
+                    <span className="flex items-center border-r border-white/10 px-3 text-sm font-semibold text-white/50">+91</span>
+                    <Input
+                      placeholder="10 digit mobile number *"
+                      type="tel"
+                      inputMode="numeric"
+                      maxLength={10}
+                      value={booking.contact_phone}
+                      onChange={(e) => setBooking({ ...booking, contact_phone: cleanMobile(e.target.value) })}
+                      className="h-full rounded-none border-0 bg-transparent text-white placeholder:text-white/30 focus-visible:ring-0"
+                    />
+                  </div>
                   <Textarea placeholder="Address / City *" value={booking.address} onChange={(e) => setBooking({ ...booking, address: e.target.value })} className="min-h-[90px] rounded-xl border-white/10 bg-white/5 text-white placeholder:text-white/30" />
                   <Textarea placeholder="Notes (optional)" value={booking.notes} onChange={(e) => setBooking({ ...booking, notes: e.target.value })} className="min-h-[90px] rounded-xl border-white/10 bg-white/5 text-white placeholder:text-white/30" />
                   <label className="flex items-start gap-3 rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
@@ -208,7 +227,7 @@ export default function Book() {
                     ['Date', booking.date ? format(new Date(booking.date), 'EEEE, MMMM d, yyyy') : ''],
                     ['Time', booking.time_slot],
                     ['Name', booking.contact_name],
-                    ['Mobile', booking.contact_phone],
+                    ['Mobile', booking.contact_phone ? `+91${booking.contact_phone}` : ''],
                     ['Address / City', booking.address],
                     ['WhatsApp Updates', booking.send_whatsapp_updates ? 'Yes' : 'No'],
                   ].map(([label, value]) => (

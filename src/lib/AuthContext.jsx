@@ -3,6 +3,8 @@ import api from './api';
 import { auth, googleProvider } from '../firebase';
 import {
   createUserWithEmailAndPassword,
+  sendEmailVerification,
+  signInWithEmailAndPassword,
   signInWithPopup,
   signOut,
   updateProfile
@@ -95,13 +97,23 @@ export const AuthProvider = ({ children }) => {
     return completeFirebaseLogin(result.user);
   };
 
+  const loginWithEmail = async (email, password) => {
+    const result = await signInWithEmailAndPassword(auth, email, password);
+
+    if (!result.user.emailVerified) {
+      await signOut(auth).catch(() => {});
+      throw new Error('Please verify your email from Gmail before logging in.');
+    }
+
+    return completeFirebaseLogin(result.user);
+  };
+
   const createAccount = async ({ fullName, email, password, mobileNumber }) => {
     const result = await createUserWithEmailAndPassword(auth, email, password);
     await updateProfile(result.user, { displayName: fullName });
-    return completeFirebaseLogin(result.user, {
-      name: fullName,
-      mobileNumber
-    });
+    await sendEmailVerification(result.user);
+    await signOut(auth).catch(() => {});
+    return { verificationSent: true };
   };
 
   const logout = async () => {
@@ -131,6 +143,7 @@ export const AuthProvider = ({ children }) => {
       authError,
       authChecked,
       loginWithGoogle,
+      loginWithEmail,
       createAccount,
       logout,
       navigateToLogin,
