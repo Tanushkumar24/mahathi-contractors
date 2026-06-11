@@ -1,5 +1,4 @@
 import dotenv from 'dotenv';
-import qrcode from 'qrcode-terminal';
 import whatsappWeb from 'whatsapp-web.js';
 
 dotenv.config();
@@ -16,6 +15,12 @@ const { Client, LocalAuth } = whatsappWeb;
 let isReady = false;
 let isInitializing = false;
 let client = null;
+let initializeAttempts = 0;
+let latestQr = null;
+let lastError = null;
+let lastDisconnectedReason = null;
+
+const MODERN_CHROME_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36';
 
 function normalizeIndianWhatsAppId(phone) {
   const digits = String(phone || '').replace(/\D/g, '');
@@ -42,23 +47,24 @@ function normalizeIndianWhatsAppId(phone) {
 }
 
 function getPuppeteerOptions() {
-  const executablePath = process.env.WHATSAPP_CHROME_PATH || process.env.PUPPETEER_EXECUTABLE_PATH;
   const options = {
-    headless: true,
+    headless: false,
+    executablePath: process.env.WHATSAPP_CHROME_PATH
+      || process.env.PUPPETEER_EXECUTABLE_PATH
+      || 'C:/Program Files/Google/Chrome/Application/chrome.exe',
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
-      '--disable-accelerated-2d-canvas',
+      '--disable-gpu',
+      '--disable-extensions',
+      '--disable-background-networking',
+      '--disable-sync',
+      '--disable-default-apps',
       '--no-first-run',
-      '--no-zygote',
-      '--disable-gpu'
+      '--no-default-browser-check'
     ]
   };
-
-  if (executablePath) {
-    options.executablePath = executablePath;
-  }
 
   return options;
 }
@@ -69,50 +75,124 @@ export function initWhatsAppClient() {
   }
 
   isInitializing = true;
+  lastError = null;
+  console.log('[WhatsApp] Launching WhatsApp client...');
+  console.log('[WhatsApp] QR will be available in Admin Dashboard > WhatsApp Connection.');
 
   client = new Client({
-    authStrategy: new LocalAuth({
-      clientId: 'mahathi-contractors',
-      dataPath: process.env.WHATSAPP_SESSION_PATH || './.wwebjs_auth'
-    }),
+    authStrategy: new LocalAuth({ clientId: 'mahathi-contractors' }),
+    authTimeoutMs: 90000,
+    qrMaxRetries: 0,
+    takeoverOnConflict: true,
+    takeoverTimeoutMs: 5000,
+    userAgent: MODERN_CHROME_USER_AGENT,
+    webVersionCache: { type: 'none' },
     puppeteer: getPuppeteerOptions()
   });
 
   client.on('qr', (qr) => {
-    console.log('[WhatsApp] QR generated. Scan this QR with the Mahathi Contractors WhatsApp account.');
-    qrcode.generate(qr, { small: true });
+    latestQr = qr;
+    isReady = false;
+    console.log('[WhatsApp] QR received. Open /admin to scan it from WhatsApp Connection.');
+  });
+
+  client.on('loading_screen', (percent, message) => {
+    console.log(`[WhatsApp] Loading screen ${percent}%: ${message}`);
   });
 
   client.on('ready', () => {
     isReady = true;
     isInitializing = false;
+    latestQr = null;
+    lastError = null;
     console.log('[WhatsApp] Connected and ready to send messages.');
   });
 
   client.on('authenticated', () => {
+    latestQr = null;
     console.log('[WhatsApp] Authenticated. Session will persist locally.');
   });
 
   client.on('auth_failure', (message) => {
     isReady = false;
     isInitializing = false;
-    console.error('[WhatsApp] Authentication failed. Delete .wwebjs_auth and scan QR again if needed:', message);
+    latestQr = null;
+    lastError = message || 'Authentication failed';
+    console.error('[WhatsApp] Auth failure:', message);
+    console.error('[WhatsApp] Run npm run whatsapp:reset, then restart the backend and scan QR again.');
   });
 
   client.on('disconnected', (reason) => {
     isReady = false;
     isInitializing = false;
+    latestQr = null;
+    lastDisconnectedReason = reason;
     client = null;
     console.error('[WhatsApp] Disconnected:', reason);
+    console.error('[WhatsApp] Restart the backend. If it keeps disconnecting, run npm run whatsapp:reset and scan QR again.');
   });
 
-  client.initialize().catch((error) => {
+  client.initialize().catch(async (error) => {
     isReady = false;
     isInitializing = false;
+    lastError = error?.message || String(error);
     console.error('[WhatsApp] Failed to initialize WhatsApp Web client:', error);
+    console.error('[WhatsApp] Backend will continue running. If this is a browser database/session issue, run npm run whatsapp:reset and restart.');
+
+    const shouldRetry = /Execution context was destroyed|Runtime\.callFunctionOn|Target closed|Navigation/i.test(error?.message || String(error));
+    if (shouldRetry && initializeAttempts < 1) {
+      initializeAttempts += 1;
+      console.log('[WhatsApp] Retrying WhatsApp client initialization after page reload/context reset...');
+      try {
+        await client?.destroy().catch(() => {});
+      } finally {
+        client = null;
+        setTimeout(() => initWhatsAppClient(), 3000);
+      }
+    } else {
+      client = null;
+    }
   });
 
   return client;
+}
+
+export function getWhatsAppStatus({ start = true } = {}) {
+  if (start) {
+    initWhatsAppClient();
+  }
+  return {
+    connected: isReady,
+    initializing: isInitializing,
+    hasQr: Boolean(latestQr),
+    lastError,
+    lastDisconnectedReason
+  };
+}
+
+export function getLatestQr() {
+  initWhatsAppClient();
+  return latestQr;
+}
+
+export async function logoutWhatsApp() {
+  try {
+    if (client) {
+      await client.logout().catch((error) => {
+        console.error('[WhatsApp] Logout failed, destroying client instead:', error);
+      });
+      await client.destroy().catch(() => {});
+    }
+  } finally {
+    isReady = false;
+    isInitializing = false;
+    latestQr = null;
+    client = null;
+    initializeAttempts = 0;
+    console.log('[WhatsApp] Logged out/disconnected. Start a new connection from Admin Dashboard.');
+  }
+
+  return getWhatsAppStatus({ start: false });
 }
 
 async function waitForReady(timeoutMs = 30000) {
@@ -165,5 +245,3 @@ export async function sendWhatsAppMessage(phone, message, options = {}) {
 export async function sendWhatsApp(phone, message) {
   return sendWhatsAppMessage(phone, message);
 }
-
-initWhatsAppClient();

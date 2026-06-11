@@ -43,12 +43,19 @@ CREATE TABLE IF NOT EXISTS bookings (
     contact_name VARCHAR(255) NOT NULL,
     contact_phone VARCHAR(15) NOT NULL,
     address TEXT NOT NULL,
+    latitude NUMERIC,
+    longitude NUMERIC,
     notes TEXT,
     send_whatsapp_updates BOOLEAN DEFAULT TRUE,
+    whatsapp_opt_in BOOLEAN DEFAULT FALSE,
     status VARCHAR(50) DEFAULT 'pending',
     created_by_id UUID REFERENCES users(id) ON DELETE SET NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS latitude NUMERIC;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS longitude NUMERIC;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS whatsapp_opt_in BOOLEAN DEFAULT FALSE;
 
 -- 4. Leads / Contact Enquiries Table
 CREATE TABLE IF NOT EXISTS leads (

@@ -4,8 +4,10 @@ import {
   Phone, MessageCircle, Calendar, MapPin, Clock, Users, ClipboardList,
   TrendingUp, Search, ChevronDown, LayoutDashboard, FolderKanban,
   Star, Settings, LogOut, Menu, X, Mail, UserCheck,
-  Plus, Pencil, Trash2, Eye, BarChart2, CheckCircle2, AlertCircle, Wrench
+  Plus, Pencil, Trash2, Eye, BarChart2, CheckCircle2, AlertCircle, Wrench,
+  Navigation, RefreshCw, Wifi, WifiOff
 } from 'lucide-react';
+import { QRCodeCanvas } from 'qrcode.react';
 import api from '@/lib/api';
 import { useAuth } from '@/lib/AuthContext';
 import { format } from 'date-fns';
@@ -154,10 +156,22 @@ function BookingsPage() {
                       {b.date && <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />{format(new Date(b.date), 'dd MMM yyyy')}</span>}
                       {b.time_slot && <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{b.time_slot}</span>}
                       {b.address && <span className="flex items-center gap-1 max-w-xs truncate"><MapPin className="w-3 h-3 shrink-0" />{b.address}</span>}
+                      <span className={`flex items-center gap-1 font-medium ${(b.whatsapp_opt_in ?? b.send_whatsapp_updates) ? 'text-green-400' : 'text-red-300'}`}>
+                        <MessageCircle className="w-3 h-3" /> WhatsApp: {(b.whatsapp_opt_in ?? b.send_whatsapp_updates) ? 'ON' : 'OFF'}
+                      </span>
                     </div>
                     {b.notes && <p className="text-xs text-white/30 mt-2 truncate max-w-md">📝 {b.notes}</p>}
                   </div>
                   <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                    {b.address && (
+                      <button
+                        onClick={() => openBookingDirections(b)}
+                        className="h-9 rounded-xl bg-amber-500/10 px-3 text-xs font-semibold text-amber-300 hover:bg-amber-500/20 transition-colors flex items-center gap-2"
+                        title="Open Directions"
+                      >
+                        <Navigation className="w-4 h-4" /> Directions
+                      </button>
+                    )}
                     {b.contact_phone && (
                       <>
                         <a href={`https://wa.me/91${b.contact_phone.replace(/\D/g,'')}`} target="_blank" rel="noopener noreferrer" className="w-9 h-9 rounded-xl bg-green-500/10 flex items-center justify-center hover:bg-green-500/20 transition-colors" title="WhatsApp">
@@ -429,6 +443,110 @@ function ReviewsPage() {
   );
 }
 
+function openBookingDirections(booking) {
+  if (booking.latitude && booking.longitude) {
+    window.open(`https://www.google.com/maps/dir/?api=1&destination=${booking.latitude},${booking.longitude}`, '_blank', 'noopener,noreferrer');
+    return;
+  }
+
+  if (booking.address) {
+    window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(booking.address)}`, '_blank', 'noopener,noreferrer');
+  }
+}
+
+function WhatsAppConnectionPanel() {
+  const [status, setStatus] = useState({ connected: false, initializing: false, hasQr: false });
+  const [qr, setQr] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const loadStatus = async (withQr = false) => {
+    try {
+      const statusRes = await api.get('/api/admin/whatsapp/status');
+      setStatus(statusRes.data);
+
+      if (withQr || (!statusRes.data.connected && statusRes.data.hasQr)) {
+        const qrRes = await api.get('/api/admin/whatsapp/qr');
+        setQr(qrRes.data.qr || '');
+        setStatus(qrRes.data.status || statusRes.data);
+      }
+    } catch (err) {
+      console.error('Failed to load WhatsApp status:', err);
+    }
+  };
+
+  useEffect(() => {
+    loadStatus(true);
+    const interval = setInterval(() => loadStatus(false), 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const refreshQr = async () => {
+    setLoading(true);
+    await loadStatus(true);
+    setLoading(false);
+  };
+
+  const disconnect = async () => {
+    setLoading(true);
+    try {
+      const res = await api.post('/api/admin/whatsapp/logout');
+      setStatus(res.data);
+      setQr('');
+    } catch (err) {
+      console.error('Failed to disconnect WhatsApp:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="glass rounded-2xl p-6 mb-8">
+      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+        <div>
+          <h3 className="text-base font-semibold text-white flex items-center gap-2">
+            {status.connected ? <Wifi className="w-4 h-4 text-green-400" /> : <WifiOff className="w-4 h-4 text-yellow-400" />}
+            WhatsApp Connection
+          </h3>
+          <p className="mt-1 text-xs text-white/40">
+            Status: <span className={status.connected ? 'text-green-400' : 'text-yellow-400'}>{status.connected ? 'Connected' : 'Not connected'}</span>
+          </p>
+          {!status.connected && <p className="mt-2 text-xs text-yellow-300/80">WhatsApp not connected. Message not sent.</p>}
+          {status.lastError && <p className="mt-2 text-xs text-red-300">{status.lastError}</p>}
+        </div>
+        <div className="flex gap-2">
+          <Button onClick={refreshQr} disabled={loading} variant="outline" className="rounded-xl border-white/10 text-white/60 gap-2">
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh QR
+          </Button>
+          <Button onClick={disconnect} disabled={loading} variant="outline" className="rounded-xl border-red-500/20 text-red-300">
+            Disconnect WhatsApp
+          </Button>
+        </div>
+      </div>
+
+      {status.connected ? (
+        <div className="mt-5 rounded-xl border border-green-500/20 bg-green-500/10 p-4 text-sm text-green-300">
+          WhatsApp connected successfully.
+        </div>
+      ) : (
+        <div className="mt-5 flex flex-col gap-4 md:flex-row md:items-center">
+          {qr ? (
+            <div className="rounded-xl bg-white p-4">
+              <QRCodeCanvas value={qr} size={220} />
+            </div>
+          ) : (
+            <div className="flex h-[252px] w-[252px] items-center justify-center rounded-xl border border-white/10 bg-white/5 text-center text-xs text-white/40">
+              {status.initializing ? 'Waiting for QR...' : 'Click Refresh QR to start connection.'}
+            </div>
+          )}
+          <div className="max-w-sm text-sm text-white/50">
+            Open WhatsApp on your phone, tap Linked devices, and scan this QR code. Keep the backend running while connecting.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ServicesPage() {
   const [services, setServices] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -585,6 +703,7 @@ function DashboardHome({ bookings, stats }) {
   return (
     <div>
       <h2 className="text-xl font-bold text-white font-heading mb-6">Overview</h2>
+      <WhatsAppConnectionPanel />
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         {[
           { label: 'Total Bookings', value: total, color: 'text-blue-400', bg: 'bg-blue-500/10', icon: ClipboardList },

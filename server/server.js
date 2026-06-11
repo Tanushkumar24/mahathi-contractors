@@ -7,7 +7,7 @@ import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import nodemailer from 'nodemailer';
 import { supabase } from './supabase.js';
-import { sendWhatsApp } from './whatsapp.js';
+import { getLatestQr, getWhatsAppStatus, logoutWhatsApp, sendWhatsApp } from './whatsapp.js';
 import { verifyToken, verifyAdmin } from './authMiddleware.js';
 import admin from './firebase-admin.js';
 
@@ -851,9 +851,12 @@ app.post('/api/bookings', async (req, res) => {
     contact_name,
     contact_phone,
     address,
+    latitude,
+    longitude,
     notes,
     created_by_id,
-    send_whatsapp_updates = true
+    send_whatsapp_updates = true,
+    whatsapp_opt_in = send_whatsapp_updates === true
   } = req.body;
 
   if (!service_name || !date || !time_slot || !contact_name || !contact_phone || !address) {
@@ -868,8 +871,11 @@ app.post('/api/bookings', async (req, res) => {
       contact_name,
       contact_phone,
       address,
+      latitude: latitude ?? null,
+      longitude: longitude ?? null,
       notes,
       send_whatsapp_updates,
+      whatsapp_opt_in,
       status: 'pending',
       created_by_id: created_by_id || null
     };
@@ -881,6 +887,18 @@ app.post('/api/bookings', async (req, res) => {
 
     if (error && /send_whatsapp_updates/i.test(error.message || '')) {
       const { send_whatsapp_updates: _unused, ...fallbackPayload } = bookingPayload;
+      const fallbackResult = await supabase.from('bookings').insert(fallbackPayload).select();
+      newBooking = fallbackResult.data;
+      error = fallbackResult.error;
+    }
+
+    if (error && /whatsapp_opt_in|latitude|longitude/i.test(error.message || '')) {
+      const {
+        whatsapp_opt_in: _whatsappOptIn,
+        latitude: _latitude,
+        longitude: _longitude,
+        ...fallbackPayload
+      } = bookingPayload;
       const fallbackResult = await supabase.from('bookings').insert(fallbackPayload).select();
       newBooking = fallbackResult.data;
       error = fallbackResult.error;
@@ -916,8 +934,13 @@ Location: ${address}
 Status: Pending`;
 
     // Trigger WhatsApp Delivery asynchronously (do not block client HTTP response)
-    if (send_whatsapp_updates) {
+    const whatsAppStatus = getWhatsAppStatus({ start: false });
+    if (whatsapp_opt_in && whatsAppStatus.connected) {
       sendWhatsApp(contact_phone, customerMsg).catch(err => console.error('Error sending customer WhatsApp:', err));
+    } else if (whatsapp_opt_in) {
+      console.warn('[WhatsApp] WhatsApp not connected. Customer booking confirmation was not sent.');
+    } else {
+      console.log('[WhatsApp] Customer did not opt in. Booking confirmation not sent.');
     }
 
     const adminPhones = (process.env.ADMIN_NUMBERS || '8688074469,9398158902').split(',');
@@ -1184,6 +1207,37 @@ app.delete('/api/reviews/:id', verifyToken, verifyAdmin, async (req, res) => {
 // ============================================================================
 // ADMIN CONSOLE ENDPOINTS
 // ============================================================================
+
+app.get('/api/admin/whatsapp/status', verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    return res.status(200).json(getWhatsAppStatus());
+  } catch (err) {
+    console.error('[WhatsApp] Failed to read status:', err);
+    return res.status(500).json({ error: 'Failed to read WhatsApp status.' });
+  }
+});
+
+app.get('/api/admin/whatsapp/qr', verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    return res.status(200).json({
+      qr: getLatestQr(),
+      status: getWhatsAppStatus()
+    });
+  } catch (err) {
+    console.error('[WhatsApp] Failed to read QR:', err);
+    return res.status(500).json({ error: 'Failed to read WhatsApp QR.' });
+  }
+});
+
+app.post('/api/admin/whatsapp/logout', verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const status = await logoutWhatsApp();
+    return res.status(200).json(status);
+  } catch (err) {
+    console.error('[WhatsApp] Failed to logout:', err);
+    return res.status(500).json({ error: 'Failed to disconnect WhatsApp.' });
+  }
+});
 
 /**
  * Endpoint: List registered users with booking counts

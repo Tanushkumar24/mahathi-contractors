@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Calendar, MapPin, FileText, Check, ArrowRight, ArrowLeft, ChevronRight } from 'lucide-react';
+import { Calendar, MapPin, FileText, Check, ArrowRight, ArrowLeft, ChevronRight, Navigation, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -40,10 +40,16 @@ export default function Book() {
     contact_name: '',
     contact_phone: '',
     address: '',
+    latitude: null,
+    longitude: null,
     notes: '',
     send_whatsapp_updates: true,
+    whatsapp_opt_in: true,
   });
   const [submitting, setSubmitting] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const [addressLoading, setAddressLoading] = useState(false);
+  const [addressSuggestions, setAddressSuggestions] = useState([]);
 
   useEffect(() => {
     if (user) {
@@ -56,6 +62,108 @@ export default function Book() {
   }, [user]);
 
   const dates = Array.from({ length: 14 }, (_, i) => addDays(new Date(), i + 1));
+
+  useEffect(() => {
+    if (!booking.address || booking.address.trim().length < 4) {
+      setAddressSuggestions([]);
+      return;
+    }
+
+    const timeout = setTimeout(async () => {
+      try {
+        setAddressLoading(true);
+        const params = new URLSearchParams({
+          q: booking.address,
+          format: 'json',
+          addressdetails: '1',
+          limit: '5',
+          countrycodes: 'in'
+        });
+        const res = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
+          headers: { Accept: 'application/json' }
+        });
+        if (!res.ok) throw new Error('Address search failed');
+        const data = await res.json();
+        setAddressSuggestions(data || []);
+      } catch (err) {
+        console.warn('Address autocomplete failed:', err);
+        setAddressSuggestions([]);
+      } finally {
+        setAddressLoading(false);
+      }
+    }, 500);
+
+    return () => clearTimeout(timeout);
+  }, [booking.address]);
+
+  const updateAddress = (address) => {
+    setBooking((prev) => ({
+      ...prev,
+      address,
+      latitude: null,
+      longitude: null,
+    }));
+  };
+
+  const selectAddressSuggestion = (suggestion) => {
+    setBooking((prev) => ({
+      ...prev,
+      address: suggestion.display_name,
+      latitude: Number(suggestion.lat),
+      longitude: Number(suggestion.lon),
+    }));
+    setAddressSuggestions([]);
+  };
+
+  const reverseGeocode = async (latitude, longitude) => {
+    const params = new URLSearchParams({
+      lat: String(latitude),
+      lon: String(longitude),
+      format: 'json',
+      addressdetails: '1'
+    });
+    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?${params.toString()}`, {
+      headers: { Accept: 'application/json' }
+    });
+    if (!res.ok) throw new Error('Reverse geocoding failed');
+    const data = await res.json();
+    return data.display_name || `${latitude}, ${longitude}`;
+  };
+
+  const useCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      toast.error('Location is not supported in this browser. Please type your address manually.');
+      return;
+    }
+
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+        try {
+          const address = await reverseGeocode(latitude, longitude);
+          setBooking((prev) => ({ ...prev, address, latitude, longitude }));
+          setAddressSuggestions([]);
+          toast.success('Current location added.');
+        } catch (err) {
+          console.warn('Reverse geocoding failed:', err);
+          setBooking((prev) => ({ ...prev, address: `${latitude}, ${longitude}`, latitude, longitude }));
+          toast.success('Location captured. Please confirm the address.');
+        } finally {
+          setLocating(false);
+        }
+      },
+      (error) => {
+        setLocating(false);
+        if (error.code === error.PERMISSION_DENIED) {
+          toast.error('Location permission denied. Please type your address manually.');
+        } else {
+          toast.error('Could not get current location. Please type your address manually.');
+        }
+      },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 }
+    );
+  };
 
   const canProceed = () => {
     if (step === 0) return booking.service_name;
@@ -75,6 +183,8 @@ export default function Book() {
       await api.post('/api/bookings', {
         ...booking,
         contact_phone: `+91${booking.contact_phone}`,
+        whatsapp_opt_in: booking.whatsapp_opt_in,
+        send_whatsapp_updates: booking.whatsapp_opt_in,
         created_by_id: user?.id || null,
       });
       toast.success('Booking received. Our team will contact you shortly.');
@@ -202,13 +312,39 @@ export default function Book() {
                       className="h-full rounded-none border-0 bg-transparent text-white placeholder:text-white/30 focus-visible:ring-0"
                     />
                   </div>
-                  <Textarea placeholder="Address / City *" value={booking.address} onChange={(e) => setBooking({ ...booking, address: e.target.value })} className="min-h-[90px] rounded-xl border-white/10 bg-white/5 text-white placeholder:text-white/30" />
+                  <div className="space-y-3">
+                    <Button type="button" variant="outline" onClick={useCurrentLocation} disabled={locating} className="w-full justify-center gap-2 rounded-xl border-white/10 text-white/70 hover:bg-white/5 hover:text-white">
+                      {locating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Navigation className="h-4 w-4" />}
+                      Use Current Location
+                    </Button>
+                    <div className="relative">
+                      <Textarea placeholder="Address / City *" value={booking.address} onChange={(e) => updateAddress(e.target.value)} className="min-h-[90px] rounded-xl border-white/10 bg-white/5 text-white placeholder:text-white/30" />
+                      {(addressLoading || addressSuggestions.length > 0) && (
+                        <div className="absolute left-0 right-0 top-full z-20 mt-2 max-h-56 overflow-y-auto rounded-xl border border-white/10 bg-[#0A0E1A] shadow-xl">
+                          {addressLoading && <div className="px-4 py-3 text-xs text-white/40">Searching address...</div>}
+                          {!addressLoading && addressSuggestions.map((suggestion) => (
+                            <button
+                              key={suggestion.place_id}
+                              type="button"
+                              onClick={() => selectAddressSuggestion(suggestion)}
+                              className="block w-full border-b border-white/5 px-4 py-3 text-left text-xs text-white/65 transition hover:bg-white/5 hover:text-white last:border-0"
+                            >
+                              {suggestion.display_name}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    {booking.latitude && booking.longitude && (
+                      <p className="text-xs text-green-400">Location saved: {Number(booking.latitude).toFixed(5)}, {Number(booking.longitude).toFixed(5)}</p>
+                    )}
+                  </div>
                   <Textarea placeholder="Notes (optional)" value={booking.notes} onChange={(e) => setBooking({ ...booking, notes: e.target.value })} className="min-h-[90px] rounded-xl border-white/10 bg-white/5 text-white placeholder:text-white/30" />
                   <label className="flex items-start gap-3 rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
                     <input
                       type="checkbox"
-                      checked={booking.send_whatsapp_updates}
-                      onChange={(e) => setBooking({ ...booking, send_whatsapp_updates: e.target.checked })}
+                      checked={booking.whatsapp_opt_in}
+                      onChange={(e) => setBooking({ ...booking, whatsapp_opt_in: e.target.checked, send_whatsapp_updates: e.target.checked })}
                       className="mt-1 h-4 w-4"
                     />
                     <span>Send booking updates on WhatsApp</span>
@@ -229,7 +365,7 @@ export default function Book() {
                     ['Name', booking.contact_name],
                     ['Mobile', booking.contact_phone ? `+91${booking.contact_phone}` : ''],
                     ['Address / City', booking.address],
-                    ['WhatsApp Updates', booking.send_whatsapp_updates ? 'Yes' : 'No'],
+                    ['WhatsApp Updates', booking.whatsapp_opt_in ? 'Yes' : 'No'],
                   ].map(([label, value]) => (
                     <div key={label} className="flex items-start justify-between border-b border-white/5 py-3 last:border-0">
                       <span className="text-sm text-white/40">{label}</span>
