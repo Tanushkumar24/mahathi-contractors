@@ -1,6 +1,12 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import api from './api';
-import { auth } from '../firebase';
+import { auth, googleProvider } from '../firebase';
+import {
+  createUserWithEmailAndPassword,
+  signInWithPopup,
+  signOut,
+  updateProfile
+} from 'firebase/auth';
 
 const AuthContext = createContext();
 
@@ -44,7 +50,7 @@ export const AuthProvider = ({ children }) => {
       setUser(null);
       setIsAuthenticated(false);
 
-      const publicPaths = ['/login', '/about', '/services', '/projects', '/reviews', '/contact', '/'];
+      const publicPaths = ['/login', '/about', '/services', '/projects', '/reviews', '/contact', '/book', '/'];
       if (!publicPaths.includes(window.location.pathname) && !window.location.pathname.startsWith('/services/')) {
         setAuthError({ type: 'auth_required', message: 'Authentication expired.' });
       }
@@ -54,48 +60,48 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const firebaseLogin = async (firebaseToken) => {
+  const completeFirebaseLogin = async (firebaseUser, profile = {}) => {
     try {
-      const res = await api.post('/api/auth/firebase-login', { firebaseToken });
-      const { userExists, token, user: loggedUser, phoneNumber } = res.data;
+      const firebaseToken = await firebaseUser.getIdToken();
+      const res = await api.post('/api/auth/firebase-login', {
+        firebaseToken,
+        profile
+      });
+      const { token, user: loggedUser } = res.data;
 
-      if (userExists && token && loggedUser) {
+      if (token && loggedUser) {
+        const mergedUser = {
+          ...loggedUser,
+          name: loggedUser.name || profile.name || firebaseUser.displayName || '',
+          email: loggedUser.email || firebaseUser.email || '',
+          mobile_number: loggedUser.mobile_number || profile.mobileNumber || '',
+        };
         localStorage.setItem('mbc_jwt_token', token);
-        localStorage.setItem('mbc_user_session', JSON.stringify(loggedUser));
-        setUser(loggedUser);
+        localStorage.setItem('mbc_user_session', JSON.stringify(mergedUser));
+        setUser(mergedUser);
         setIsAuthenticated(true);
         setAuthError(null);
+        return mergedUser;
       }
-
-      return { userExists, phoneNumber, user: loggedUser || null };
+      throw new Error('Login failed. Please try again.');
     } catch (err) {
       const errorMsg = err.response?.data?.error || 'Login failed. Please try again.';
       throw new Error(errorMsg);
     }
   };
 
-  const registerUser = async (name, city, firebaseToken) => {
-    try {
-      const res = await api.post('/api/auth/register', {
-        name,
-        city,
-        firebaseToken
-      });
-      const { token, user: createdUser } = res.data;
+  const loginWithGoogle = async () => {
+    const result = await signInWithPopup(auth, googleProvider);
+    return completeFirebaseLogin(result.user);
+  };
 
-      if (token && createdUser) {
-        localStorage.setItem('mbc_jwt_token', token);
-        localStorage.setItem('mbc_user_session', JSON.stringify(createdUser));
-        setUser(createdUser);
-        setIsAuthenticated(true);
-        setAuthError(null);
-      }
-
-      return res.data;
-    } catch (err) {
-      const errorMsg = err.response?.data?.error || 'Registration failed. Please try again.';
-      throw new Error(errorMsg);
-    }
+  const createAccount = async ({ fullName, email, password, mobileNumber }) => {
+    const result = await createUserWithEmailAndPassword(auth, email, password);
+    await updateProfile(result.user, { displayName: fullName });
+    return completeFirebaseLogin(result.user, {
+      name: fullName,
+      mobileNumber
+    });
   };
 
   const logout = async () => {
@@ -106,6 +112,7 @@ export const AuthProvider = ({ children }) => {
     }
     localStorage.removeItem('mbc_jwt_token');
     localStorage.removeItem('mbc_user_session');
+    await signOut(auth).catch(() => {});
     setUser(null);
     setIsAuthenticated(false);
     setAuthChecked(true);
@@ -123,8 +130,8 @@ export const AuthProvider = ({ children }) => {
       isLoadingAuth,
       authError,
       authChecked,
-      firebaseLogin,
-      registerUser,
+      loginWithGoogle,
+      createAccount,
       logout,
       navigateToLogin,
       checkAppState,

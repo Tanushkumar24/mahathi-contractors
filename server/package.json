@@ -1,7 +1,7 @@
 {
   "name": "mbc-backend",
   "version": "1.0.0",
-  "description": "Express.js Backend for Mahathi Building Contractors Mobile OTP Auth and booking systems",
+  "description": "Express.js backend for Mahathi Contractors auth, booking, admin, and notification systems",
   "main": "server.js",
   "type": "module",
   "scripts": {

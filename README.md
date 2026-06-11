@@ -59,11 +59,11 @@ Simhadri Sampath Kumar
 
 ## Booking flow (high level)
 
-1. Customer enters mobile number.
-2. System sends WhatsApp OTP.
-3. Customer enters OTP.
-4. OTP is verified.
-5. Booking is saved and confirmations are sent to customer and admins.
+1. Customer chooses a service, date, and time.
+2. Customer enters contact details and address.
+3. Customer chooses whether to receive WhatsApp updates.
+4. Booking is saved and alerts are sent to admins.
+5. Customer confirmation is sent only when WhatsApp updates are enabled.
 
 ### Booking form fields
 
@@ -138,7 +138,7 @@ npx prisma init --datasource-provider postgresql
 2. Remove demo code and unused dependencies.
 3. Scaffold `web/` Next.js app and implement the homepage per above-the-fold requirements.
 4. Scaffold `api/` backend with Prisma schema for Services, Bookings, Leads, Admins.
-5. Implement WhatsApp OTP flow and notification logic using chosen provider.
+5. Implement WhatsApp booking confirmations, admin alerts, and status updates using the chosen provider.
 
 ## What I need from you
 

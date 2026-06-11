@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Menu, X, Phone, LogOut } from 'lucide-react';
+import { Menu, X, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/AuthContext';
 
@@ -79,10 +79,6 @@ export default function Navbar() {
 
           {/* CTA Buttons */}
           <div className="hidden lg:flex items-center gap-3">
-            <a href="tel:+918688074469" className="text-white/60 hover:text-white transition-colors">
-              <Phone className="w-4 h-4" />
-            </a>
-            
             {isAuthenticated ? (
               <Button 
                 onClick={logout} 

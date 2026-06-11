@@ -4,7 +4,7 @@ import {
   Phone, MessageCircle, Calendar, MapPin, Clock, Users, ClipboardList,
   TrendingUp, Search, ChevronDown, LayoutDashboard, FolderKanban,
   Star, Settings, LogOut, Menu, X, Mail, UserCheck,
-  Plus, Pencil, Trash2, Eye, BarChart2, CheckCircle2, AlertCircle
+  Plus, Pencil, Trash2, Eye, BarChart2, CheckCircle2, AlertCircle, Wrench
 } from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/lib/AuthContext';
@@ -429,6 +429,88 @@ function ReviewsPage() {
   );
 }
 
+function ServicesPage() {
+  const [services, setServices] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editService, setEditService] = useState(null);
+  const [form, setForm] = useState({ name: '', category: '', description: '', status: 'active' });
+
+  useEffect(() => {
+    api.get('/api/services').then(res => { setServices(res.data); setLoading(false); });
+  }, []);
+
+  const resetForm = () => {
+    setForm({ name: '', category: '', description: '', status: 'active' });
+    setEditService(null);
+    setShowForm(false);
+  };
+
+  const saveService = async () => {
+    if (editService) {
+      const res = await api.put(`/api/services/${editService.id}`, form);
+      setServices(prev => prev.map(s => s.id === editService.id ? res.data : s));
+    } else {
+      const res = await api.post('/api/services', form);
+      setServices(prev => [res.data, ...prev]);
+    }
+    resetForm();
+  };
+
+  const deleteService = async (id) => {
+    await api.delete(`/api/services/${id}`);
+    setServices(prev => prev.filter(s => s.id !== id));
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-bold text-white font-heading">Services</h2>
+        <Button onClick={() => setShowForm(true)} className="bg-blue-600 hover:bg-blue-500 text-white rounded-xl gap-2 text-sm">
+          <Plus className="w-4 h-4" /> Add Service
+        </Button>
+      </div>
+
+      {showForm && (
+        <div className="glass rounded-2xl p-5 space-y-4">
+          <Input placeholder="Service name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="bg-white/5 border-white/10 text-white" />
+          <Input placeholder="Category" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} className="bg-white/5 border-white/10 text-white" />
+          <Input placeholder="Description" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} className="bg-white/5 border-white/10 text-white" />
+          <select value={form.status} onChange={e => setForm({ ...form, status: e.target.value })} className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-white">
+            <option value="active" className="bg-[#0A0E1A]">Active</option>
+            <option value="inactive" className="bg-[#0A0E1A]">Inactive</option>
+          </select>
+          <div className="flex gap-2">
+            <Button onClick={saveService} className="bg-green-600 hover:bg-green-500 text-white rounded-xl">Save</Button>
+            <Button onClick={resetForm} variant="outline" className="border-white/10 text-white/60 rounded-xl">Cancel</Button>
+          </div>
+        </div>
+      )}
+
+      {loading ? <div className="glass rounded-xl p-5 h-20 animate-pulse" />
+      : services.length === 0 ? <div className="glass rounded-2xl p-12 text-center"><p className="text-white/40">No services yet.</p></div>
+      : <div className="space-y-3">
+          {services.map(service => (
+            <div key={service.id} className="glass rounded-xl p-4 flex items-center gap-4">
+              <div className="flex-1 min-w-0">
+                <h3 className="font-semibold text-white">{service.name}</h3>
+                <p className="text-xs text-blue-400">{service.category}</p>
+                <p className="text-xs text-white/40 truncate">{service.description}</p>
+              </div>
+              <span className="text-xs text-white/40">{service.status}</span>
+              <button onClick={() => { setEditService(service); setForm({ name: service.name || '', category: service.category || '', description: service.description || '', status: service.status || 'active' }); setShowForm(true); }} className="p-2 rounded-lg hover:bg-white/5 text-white/40 hover:text-blue-400">
+                <Pencil className="w-4 h-4" />
+              </button>
+              <button onClick={() => deleteService(service.id)} className="p-2 rounded-lg hover:bg-white/5 text-white/40 hover:text-red-400">
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+          ))}
+        </div>}
+    </div>
+  );
+}
+
 function UsersPage() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -565,6 +647,7 @@ const sidebarItems = [
   { id: 'bookings', label: 'Bookings', icon: ClipboardList },
   { id: 'leads', label: 'Leads', icon: Mail },
   { id: 'projects', label: 'Projects', icon: FolderKanban },
+  { id: 'services', label: 'Services', icon: Wrench },
   { id: 'reviews', label: 'Testimonials', icon: Star },
   { id: 'users', label: 'Users', icon: Users },
   { id: 'settings', label: 'Settings', icon: Settings },
@@ -625,6 +708,7 @@ export default function AdminDashboard() {
       case 'bookings': return <BookingsPage />;
       case 'leads': return <LeadsPage />;
       case 'projects': return <ProjectsPage />;
+      case 'services': return <ServicesPage />;
       case 'reviews': return <ReviewsPage />;
       case 'users': return <UsersPage />;
       case 'settings': return <SettingsPage />;

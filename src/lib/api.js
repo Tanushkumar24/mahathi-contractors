@@ -108,7 +108,7 @@ function clearAuthSession() {
   localStorage.removeItem('mbc_user_session');
 
   // Force redirect if not on a public path
-  const publicPaths = ['/login', '/about', '/services', '/projects', '/reviews', '/contact', '/'];
+  const publicPaths = ['/login', '/about', '/services', '/projects', '/reviews', '/contact', '/book', '/'];
   const currentPath = window.location.pathname;
   const isPublicPath = publicPaths.some((p) => p === currentPath || currentPath.startsWith('/services/'));
 

@@ -1,4 +1,5 @@
 import { Toaster } from "@/components/ui/toaster"
+import { Toaster as SonnerToaster } from "sonner"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
 import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom';
@@ -52,8 +53,8 @@ const AuthenticatedApp = () => {
         <Route path="/reviews" element={<Reviews />} />
         <Route path="/contact" element={<Contact />} />
         <Route path="/services/:slug" element={<ServiceDetail />} />
+        <Route path="/book" element={<Book />} />
         <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />} />}>
-          <Route path="/book" element={<Book />} />
           <Route path="/dashboard" element={<Dashboard />} />
         </Route>
       </Route>
@@ -68,10 +69,18 @@ const AuthenticatedApp = () => {
   );
 };
 
-import OtpLogin from "./components/OtpLogin";
-
 function App() {
-  return <OtpLogin />;
+  return (
+    <QueryClientProvider client={queryClientInstance}>
+      <Router>
+        <AuthProvider>
+          <AuthenticatedApp />
+          <Toaster />
+          <SonnerToaster richColors position="top-right" />
+        </AuthProvider>
+      </Router>
+    </QueryClientProvider>
+  );
 }
 
 export default App;

@@ -4,6 +4,12 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const JWT_SECRET = process.env.JWT_SECRET;
+const ADMIN_EMAILS = [
+  'mahathicontractors@gmail.com',
+  'devigayatri2002@gmail.com',
+  'tanushkumar2006@gmail.com',
+  'simhadri.tanushkumar@gmail.com'
+];
 
 if (!JWT_SECRET) {
   console.error('CRITICAL ERROR: JWT_SECRET environment variable is missing!');
@@ -23,7 +29,7 @@ export function verifyToken(req, res, next) {
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = decoded; // Contains id, mobile_number, role, name
+    req.user = decoded;
     next();
   } catch (err) {
     return res.status(403).json({ error: 'Invalid or expired token.' });
@@ -34,7 +40,8 @@ export function verifyToken(req, res, next) {
  * Middleware to restrict route to administrators only
  */
 export function verifyAdmin(req, res, next) {
-  if (!req.user || req.user.role !== 'admin') {
+  const email = (req.user?.email || '').toLowerCase();
+  if (!req.user || (req.user.role !== 'admin' && !ADMIN_EMAILS.includes(email))) {
     return res.status(403).json({ error: 'Access denied. Administrator privileges required.' });
   }
   next();

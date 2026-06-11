@@ -9,20 +9,10 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(255) NOT NULL,
-    mobile_number VARCHAR(15) UNIQUE NOT NULL,
-    city VARCHAR(255) NOT NULL,
+    email VARCHAR(255) UNIQUE,
+    mobile_number VARCHAR(15) UNIQUE,
+    city VARCHAR(255) DEFAULT 'Not provided',
     role VARCHAR(50) DEFAULT 'user',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
--- 2. OTP Verification Logs Table
-CREATE TABLE IF NOT EXISTS otp_verifications (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    mobile_number VARCHAR(15) NOT NULL,
-    otp VARCHAR(6) NOT NULL,
-    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
-    attempts INTEGER DEFAULT 0,
-    verified BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -36,6 +26,7 @@ CREATE TABLE IF NOT EXISTS bookings (
     contact_phone VARCHAR(15) NOT NULL,
     address TEXT NOT NULL,
     notes TEXT,
+    send_whatsapp_updates BOOLEAN DEFAULT TRUE,
     status VARCHAR(50) DEFAULT 'pending',
     created_by_id UUID REFERENCES users(id) ON DELETE SET NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
@@ -67,7 +58,17 @@ CREATE TABLE IF NOT EXISTS projects (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- 6. Testimonials / Reviews Table
+-- 6. Services Table
+CREATE TABLE IF NOT EXISTS services (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(255) NOT NULL,
+    category VARCHAR(255),
+    description TEXT,
+    status VARCHAR(50) DEFAULT 'active',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 7. Testimonials / Reviews Table
 CREATE TABLE IF NOT EXISTS reviews (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(255) NOT NULL,
@@ -80,8 +81,8 @@ CREATE TABLE IF NOT EXISTS reviews (
 );
 
 -- Index optimization for queries
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_mobile ON users(mobile_number);
-CREATE INDEX IF NOT EXISTS idx_otp_mobile ON otp_verifications(mobile_number);
 CREATE INDEX IF NOT EXISTS idx_bookings_phone ON bookings(contact_phone);
 
 -- ============================================================================
@@ -90,10 +91,10 @@ CREATE INDEX IF NOT EXISTS idx_bookings_phone ON bookings(contact_phone);
 
 -- Enable RLS on all tables
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
-ALTER TABLE otp_verifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bookings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE leads ENABLE ROW LEVEL SECURITY;
 ALTER TABLE projects ENABLE ROW LEVEL SECURITY;
+ALTER TABLE services ENABLE ROW LEVEL SECURITY;
 ALTER TABLE reviews ENABLE ROW LEVEL SECURITY;
 
 -- Note: Since our backend connects via the service_role key, it will bypass these
@@ -106,10 +107,6 @@ ON users FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 CREATE POLICY "Allow public read-only of users profiles by matching id" 
 ON users FOR SELECT USING (true);
-
--- B. OTP Verifications RLS Policies
-CREATE POLICY "Allow service role full access on otp_verifications" 
-ON otp_verifications FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 -- C. Bookings RLS Policies
 CREATE POLICY "Allow service role full access on bookings" 
@@ -133,7 +130,14 @@ ON projects FOR ALL TO service_role USING (true) WITH CHECK (true);
 CREATE POLICY "Allow public reading of projects" 
 ON projects FOR SELECT TO anon, authenticated USING (true);
 
--- F. Reviews RLS Policies
+-- F. Services RLS Policies
+CREATE POLICY "Allow service role full access on services" 
+ON services FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+CREATE POLICY "Allow public reading of services" 
+ON services FOR SELECT TO anon, authenticated USING (true);
+
+-- G. Reviews RLS Policies
 CREATE POLICY "Allow service role full access on reviews" 
 ON reviews FOR ALL TO service_role USING (true) WITH CHECK (true);
 

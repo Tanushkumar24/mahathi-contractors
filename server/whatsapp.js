@@ -9,7 +9,7 @@ dotenv.config();
  * @returns {Promise<boolean>}
  */
 export async function sendWhatsApp(toPhone, message) {
-  const provider = process.env.SMS_PROVIDER || 'mock'; // Reuses SMS_PROVIDER logic for unified development/production toggles
+  const provider = process.env.WHATSAPP_PROVIDER || 'mock';
   const cleanPhone = toPhone.replace(/\D/g, '');
   const formattedNumber = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
 
@@ -17,7 +17,7 @@ export async function sendWhatsApp(toPhone, message) {
 
   if (provider === 'mock') {
     if (process.env.NODE_ENV === 'production') {
-      console.error('[WhatsApp Error] Mock provider is NOT allowed in production! Configure SMS_PROVIDER=msg91');
+      console.error('[WhatsApp Error] Mock provider is NOT allowed in production. Configure WHATSAPP_PROVIDER=twilio or WHATSAPP_WEBHOOK_URL.');
       throw new Error('Mock WhatsApp provider is not allowed in production');
     }
     console.log('\n==================================================');
@@ -70,45 +70,38 @@ export async function sendWhatsApp(toPhone, message) {
     }
   }
 
-  if (provider === 'msg91') {
-    const authKey = process.env.MSG91_AUTH_KEY;
-    const templateId = process.env.MSG91_WHATSAPP_TEMPLATE_ID;
+  if (provider === 'webhook') {
+    const webhookUrl = process.env.WHATSAPP_WEBHOOK_URL;
 
-    if (!authKey) {
-      console.error('[WhatsApp Error] MSG91 credentials missing (MSG91_AUTH_KEY)!');
+    if (!webhookUrl) {
+      console.error('[WhatsApp Error] WHATSAPP_WEBHOOK_URL is missing!');
       throw new Error('WhatsApp configuration error on server');
     }
 
     try {
-      const url = `https://api.msg91.com/api/v5/whatsapp/send`;
       const payload = {
         to: formattedNumber,
-        type: "template",
-        template_id: templateId || "default_mcb_template",
-        params: {
-          message_text: message
-        }
+        message
       };
 
-      const res = await fetch(url, {
+      const res = await fetch(webhookUrl, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'authkey': authKey
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify(payload)
       });
 
       if (res.ok) {
-        console.log(`[WhatsApp Msg91] Sent message successfully to ${toPhone}`);
+        console.log(`[WhatsApp Webhook] Sent message successfully to ${toPhone}`);
         return true;
       } else {
         const text = await res.text();
-        console.error('[WhatsApp Msg91 Error]', text);
-        throw new Error('Msg91 WhatsApp API error');
+        console.error('[WhatsApp Webhook Error]', text);
+        throw new Error('WhatsApp webhook error');
       }
     } catch (err) {
-      console.error('[WhatsApp Msg91 Network Error]', err);
+      console.error('[WhatsApp Webhook Network Error]', err);
       throw err;
     }
   }

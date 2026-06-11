@@ -1,12 +1,19 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
-import { ArrowRight, Phone, MessageCircle, Calendar, ClipboardList } from 'lucide-react';
+import { ArrowRight, Phone, MessageCircle, Calendar, ClipboardList, ShieldCheck, Clock, IndianRupee, Building2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 const quickServices = [
   'House Construction', 'Renovation Works', 'Painting Works',
   'Interior Works', 'Epoxy Flooring', 'Electrical Works', 'Plumbing Works', 'Civil Contracting',
+];
+
+const trustPoints = [
+  { icon: ShieldCheck, label: 'Quality materials' },
+  { icon: Clock, label: 'On-time handover' },
+  { icon: IndianRupee, label: 'Transparent pricing' },
+  { icon: Building2, label: 'Residential and commercial' },
 ];
 
 export default function HeroSection() {
@@ -15,9 +22,6 @@ export default function HeroSection() {
       {/* Background */}
       <div className="absolute inset-0">
         <div className="absolute inset-0 bg-gradient-to-br from-[#0A0E1A] via-[#0F1629] to-[#0A0E1A]" />
-        {/* Gradient orbs */}
-        <div className="absolute top-1/4 -left-32 w-96 h-96 bg-blue-600/10 rounded-full blur-[120px]" />
-        <div className="absolute bottom-1/4 -right-32 w-96 h-96 bg-blue-500/8 rounded-full blur-[120px]" />
         {/* Grid pattern */}
         <div className="absolute inset-0 opacity-[0.03]" style={{
           backgroundImage: `linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)`,
@@ -36,7 +40,7 @@ export default function HeroSection() {
               className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-blue-500/10 border border-blue-500/20 mb-8"
             >
               <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
-              <span className="text-xs font-medium text-blue-400 tracking-wide">MBC — Since 2020</span>
+              <span className="text-xs font-medium text-blue-400 tracking-wide">Mahathi Contractors - Since 2020</span>
             </motion.div>
 
             <motion.h1
@@ -58,7 +62,7 @@ export default function HeroSection() {
               transition={{ duration: 0.6, delay: 0.2 }}
               className="text-base md:text-lg text-white/40 mt-6 max-w-lg leading-relaxed"
             >
-              Premium construction, interior design & renovation services powered by modern technology and 20+ years of craftsmanship.
+              Professional construction, renovation, repairs, interiors, and maintenance for residential and commercial spaces.
             </motion.p>
 
             {/* CTA Buttons */}
@@ -84,6 +88,20 @@ export default function HeroSection() {
                   <MessageCircle className="w-4 h-4" /> Get Free Quote
                 </Button>
               </Link>
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0, y: 24 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, delay: 0.4 }}
+              className="mt-8 grid grid-cols-2 gap-3 sm:max-w-xl"
+            >
+              {trustPoints.map((item) => (
+                <div key={item.label} className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-3 text-sm text-white/70">
+                  <item.icon className="h-4 w-4 text-blue-400" />
+                  <span>{item.label}</span>
+                </div>
+              ))}
             </motion.div>
 
 

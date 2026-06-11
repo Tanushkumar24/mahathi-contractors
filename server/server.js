@@ -19,6 +19,12 @@ app.set('trust proxy', 1);
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const ADMIN_NUMBERS = (process.env.ADMIN_NUMBERS || '8688074469,9398158902').split(',');
+const ADMIN_EMAILS = [
+  'mahathicontractors@gmail.com',
+  'devigayatri2002@gmail.com',
+  'tanushkumar2006@gmail.com',
+  'simhadri.tanushkumar@gmail.com'
+];
 
 // Security: HTTP headers protection
 app.use(helmet());
@@ -91,7 +97,13 @@ app.use(sanitizeInput);
 // JWT & Refresh Token Helpers
 const generateAccessToken = (user) => {
   return jwt.sign(
-    { id: user.id, mobile_number: user.mobile_number, role: user.role, name: user.name },
+    {
+      id: user.id,
+      mobile_number: user.mobile_number,
+      email: user.email,
+      role: user.role,
+      name: user.name
+    },
     JWT_SECRET,
     { expiresIn: '7d' } // JWT expiry (7 days)
   );
@@ -130,10 +142,6 @@ const generateAndSetRefreshToken = async (req, res, userId) => {
 // AUTHENTICATION ENDPOINTS
 // ============================================================================
 
-/**
- * Helper: strip country code from Firebase phone number
- * e.g. "+918688074469" -> "8688074469"
- */
 function extractMobile(phoneNumber) {
   if (!phoneNumber) return null;
   const cleaned = phoneNumber.replace(/\D/g, '');
@@ -145,48 +153,104 @@ function extractMobile(phoneNumber) {
 }
 
 /**
- * Endpoint: Firebase Phone Auth Login
+ * Endpoint: Firebase Auth Login
  * POST /api/auth/firebase-login
  */
 app.post('/api/auth/firebase-login', async (req, res) => {
-  const { firebaseToken } = req.body;
+  const { firebaseToken, profile = {} } = req.body;
 
   if (!firebaseToken) {
     return res.status(400).json({ error: 'Firebase token is required.' });
   }
 
   try {
-    // 1. Verify Firebase ID token
     const decodedToken = await admin.auth().verifyIdToken(firebaseToken);
-    const firebasePhone = decodedToken.phone_number;
+    const email = (decodedToken.email || profile.email || '').toLowerCase();
+    const name = profile.name || decodedToken.name || decodedToken.displayName || email?.split('@')[0] || 'Customer';
+    const mobileNumber = extractMobile(profile.mobileNumber || decodedToken.phone_number || '');
 
-    if (!firebasePhone) {
-      return res.status(400).json({ error: 'No phone number associated with this Firebase account.' });
+    if (!email) {
+      return res.status(400).json({ error: 'A verified email is required to login.' });
     }
 
-    const mobileNumber = extractMobile(firebasePhone);
-
-    if (!mobileNumber || mobileNumber.length !== 10) {
-      return res.status(400).json({ error: 'Invalid phone number from Firebase.' });
-    }
-
-    // 2. Check if user already exists in our database
-    const { data: users, error: userError } = await supabase
-      .from('users')
-      .select('*')
-      .eq('mobile_number', mobileNumber)
-      .limit(1);
+    const role = ADMIN_EMAILS.includes(email) ? 'admin' : 'user';
+    const { data: allUsers, error: userError } = await supabase.from('users').select('*');
 
     if (userError) throw userError;
 
-    if (users && users.length > 0) {
-      const user = users[0];
-      const token = generateAccessToken(user);
+    const user = (allUsers || []).find((item) => {
+      const itemEmail = (item.email || '').toLowerCase();
+      const itemPhone = (item.mobile_number || '').replace(/\D/g, '');
+      return itemEmail === email || (mobileNumber && itemPhone === mobileNumber);
+    });
+
+    if (user) {
+      const normalizedUser = {
+        ...user,
+        email: user.email || email,
+        mobile_number: user.mobile_number || mobileNumber,
+        role
+      };
+
+      if (user.role !== role || !user.email || (mobileNumber && !user.mobile_number)) {
+        await supabase
+          .from('users')
+          .update({
+            name: user.name || name,
+            email,
+            mobile_number: user.mobile_number || mobileNumber || null,
+            role
+          })
+          .eq('id', user.id)
+          .then(({ error }) => {
+            if (error) {
+              console.warn('User profile update skipped:', error.message);
+            }
+          });
+      }
+
+      const token = generateAccessToken(normalizedUser);
       await generateAndSetRefreshToken(req, res, user.id);
-      return res.status(200).json({ userExists: true, token, user });
-    } else {
-      return res.status(200).json({ userExists: false, phoneNumber: firebasePhone });
+      return res.status(200).json({ token, user: normalizedUser });
     }
+
+    const insertPayload = {
+      name,
+      email,
+      mobile_number: mobileNumber || null,
+      city: profile.city || 'Not provided',
+      role
+    };
+
+    let { data: newUser, error: registerError } = await supabase
+      .from('users')
+      .insert(insertPayload)
+      .select();
+
+    if (registerError && /email|mobile_number|null/i.test(registerError.message || '')) {
+      const fallbackMobile = mobileNumber || `9${String(Date.now()).slice(-9)}`;
+      const fallbackInsert = {
+        name,
+        mobile_number: fallbackMobile,
+        city: profile.city || 'Not provided',
+        role
+      };
+      const fallbackResult = await supabase.from('users').insert(fallbackInsert).select();
+      newUser = fallbackResult.data;
+      registerError = fallbackResult.error;
+    }
+
+    if (registerError) throw registerError;
+
+    const createdUser = {
+      ...newUser[0],
+      email,
+      mobile_number: newUser[0].mobile_number || mobileNumber || ''
+    };
+
+    const token = generateAccessToken(createdUser);
+    await generateAndSetRefreshToken(req, res, createdUser.id);
+    return res.status(201).json({ token, user: createdUser });
   } catch (err) {
     console.error('Error in firebase-login:', err);
     if (err.code === 'auth/id-token-expired') {
@@ -200,54 +264,30 @@ app.post('/api/auth/firebase-login', async (req, res) => {
 });
 
 /**
- * Endpoint: Register User Profile (Firebase-verified users only)
+ * Endpoint: Register User Profile
  * POST /api/auth/register
  */
 app.post('/api/auth/register', async (req, res) => {
-  const { name, city, firebaseToken } = req.body;
+  const { firebaseToken, profile = {} } = req.body;
 
-  if (!name || !city || !firebaseToken) {
-    return res.status(400).json({ error: 'All fields (Name, City) and Firebase token are required.' });
+  if (!firebaseToken) {
+    return res.status(400).json({ error: 'Firebase token is required.' });
   }
 
   try {
-    // 1. Verify Firebase ID token to confirm phone number
     const decodedToken = await admin.auth().verifyIdToken(firebaseToken);
-    const firebasePhone = decodedToken.phone_number;
+    const email = (decodedToken.email || profile.email || '').toLowerCase();
+    const name = profile.name || decodedToken.name || email?.split('@')[0] || 'Customer';
+    const mobileNumber = extractMobile(profile.mobileNumber || decodedToken.phone_number || '');
+    const role = ADMIN_EMAILS.includes(email) ? 'admin' : 'user';
 
-    if (!firebasePhone) {
-      return res.status(400).json({ error: 'No phone number associated with this Firebase account.' });
-    }
-
-    const mobileNumber = extractMobile(firebasePhone);
-
-    if (!mobileNumber || mobileNumber.length !== 10) {
-      return res.status(400).json({ error: 'Invalid phone number from Firebase.' });
-    }
-
-    // 2. Prevent duplicate user profiles
-    const { data: checkUsers, error: checkError } = await supabase
-      .from('users')
-      .select('id')
-      .eq('mobile_number', mobileNumber)
-      .limit(1);
-
-    if (checkError) throw checkError;
-
-    if (checkUsers && checkUsers.length > 0) {
-      return res.status(400).json({ error: 'This mobile number is already registered.' });
-    }
-
-    // 3. Assign role ('admin' if number is in ADMIN_NUMBERS, else 'user')
-    const role = ADMIN_NUMBERS.includes(mobileNumber) ? 'admin' : 'user';
-
-    // 4. Create user row
     const { data: newUser, error: registerError } = await supabase
       .from('users')
       .insert({
         name,
-        mobile_number: mobileNumber,
-        city,
+        email,
+        mobile_number: mobileNumber || null,
+        city: profile.city || 'Not provided',
         role
       })
       .select();
@@ -255,17 +295,11 @@ app.post('/api/auth/register', async (req, res) => {
     if (registerError) throw registerError;
 
     const user = newUser[0];
-
-    // 5. Generate JWT and refresh tokens
-    const token = generateAccessToken(user);
-    await generateAndSetRefreshToken(req, res, user.id);
-
+      const token = generateAccessToken(user);
+      await generateAndSetRefreshToken(req, res, user.id);
     return res.status(201).json({ token, user });
   } catch (err) {
     console.error('Error in register:', err);
-    if (err.code === 'auth/id-token-expired') {
-      return res.status(401).json({ error: 'Session expired. Please verify your phone again.' });
-    }
     return res.status(500).json({ error: 'Registration failed. Please try again.' });
   }
 });
@@ -420,27 +454,47 @@ app.get('/api/bookings', verifyToken, async (req, res) => {
  * POST /api/bookings
  */
 app.post('/api/bookings', async (req, res) => {
-  const { service_name, date, time_slot, contact_name, contact_phone, address, notes, created_by_id } = req.body;
+  const {
+    service_name,
+    date,
+    time_slot,
+    contact_name,
+    contact_phone,
+    address,
+    notes,
+    created_by_id,
+    send_whatsapp_updates = true
+  } = req.body;
 
   if (!service_name || !date || !time_slot || !contact_name || !contact_phone || !address) {
     return res.status(400).json({ error: 'Required booking details are missing.' });
   }
 
   try {
-    const { data: newBooking, error } = await supabase
+    const bookingPayload = {
+      service_name,
+      date,
+      time_slot,
+      contact_name,
+      contact_phone,
+      address,
+      notes,
+      send_whatsapp_updates,
+      status: 'pending',
+      created_by_id: created_by_id || null
+    };
+
+    let { data: newBooking, error } = await supabase
       .from('bookings')
-      .insert({
-        service_name,
-        date,
-        time_slot,
-        contact_name,
-        contact_phone,
-        address,
-        notes,
-        status: 'pending',
-        created_by_id: created_by_id || null
-      })
+      .insert(bookingPayload)
       .select();
+
+    if (error && /send_whatsapp_updates/i.test(error.message || '')) {
+      const { send_whatsapp_updates: _unused, ...fallbackPayload } = bookingPayload;
+      const fallbackResult = await supabase.from('bookings').insert(fallbackPayload).select();
+      newBooking = fallbackResult.data;
+      error = fallbackResult.error;
+    }
 
     if (error) throw error;
 
@@ -476,7 +530,9 @@ Location: ${address}
 Status: Pending`;
 
     // Trigger WhatsApp Delivery asynchronously (do not block client HTTP response)
-    sendWhatsApp(contact_phone, customerMsg).catch(err => console.error('Error sending customer WhatsApp:', err));
+    if (send_whatsapp_updates) {
+      sendWhatsApp(contact_phone, customerMsg).catch(err => console.error('Error sending customer WhatsApp:', err));
+    }
 
     const adminPhones = (process.env.ADMIN_NUMBERS || '8688074469,9398158902').split(',');
     adminPhones.forEach(adminPhone => {
@@ -661,6 +717,50 @@ app.delete('/api/projects/:id', verifyToken, verifyAdmin, async (req, res) => {
 });
 
 // ============================================================================
+// SERVICES ENDPOINTS
+// ============================================================================
+
+app.get('/api/services', async (req, res) => {
+  try {
+    const { data: services, error } = await supabase.from('services').select('*').order('created_at', { ascending: false });
+    if (error) throw error;
+    return res.status(200).json(services);
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/services', verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const { data, error } = await supabase.from('services').insert(req.body).select();
+    if (error) throw error;
+    return res.status(201).json(data[0]);
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/services/:id', verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const { data, error } = await supabase.from('services').update(req.body).eq('id', req.params.id).select();
+    if (error) throw error;
+    return res.status(200).json(data[0]);
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/services/:id', verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const { error } = await supabase.from('services').delete().eq('id', req.params.id);
+    if (error) throw error;
+    return res.status(200).json({ message: 'Service deleted successfully.' });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================================================
 // TESTIMONIALS / REVIEWS ENDPOINTS
 // ============================================================================
 
@@ -729,7 +829,7 @@ app.get('/api/admin/users', verifyToken, verifyAdmin, async (req, res) => {
 
     // 4. Enrich user profiles
     const enrichedUsers = users.map(u => {
-      const cleanPhone = u.mobile_number.replace(/\D/g, '');
+      const cleanPhone = (u.mobile_number || '').replace(/\D/g, '');
       return {
         ...u,
         booking_count: bookingCounts[cleanPhone] || 0
