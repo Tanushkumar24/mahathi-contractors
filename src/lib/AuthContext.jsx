@@ -3,7 +3,6 @@ import api from './api';
 import { auth, googleProvider } from '../firebase';
 import {
   createUserWithEmailAndPassword,
-  sendEmailVerification,
   signInWithEmailAndPassword,
   signInWithPopup,
   signOut,
@@ -88,7 +87,9 @@ export const AuthProvider = ({ children }) => {
       throw new Error('Login failed. Please try again.');
     } catch (err) {
       const errorMsg = err.response?.data?.error || 'Login failed. Please try again.';
-      throw new Error(errorMsg);
+      const wrappedError = new Error(errorMsg);
+      wrappedError.code = err.response?.data?.code;
+      throw wrappedError;
     }
   };
 
@@ -97,23 +98,76 @@ export const AuthProvider = ({ children }) => {
     return completeFirebaseLogin(result.user);
   };
 
+  const sendEmailOtp = async ({ email, name }) => {
+    const normalizedEmail = email.trim().toLowerCase();
+    await api.post('/api/auth/send-email-otp', {
+      email: normalizedEmail,
+      name: name || normalizedEmail.split('@')[0]
+    });
+    return { email: normalizedEmail };
+  };
+
+  const verifyEmailOtp = async ({ email, otp }) => {
+    const normalizedEmail = email.trim().toLowerCase();
+    await api.post('/api/auth/verify-email-otp', {
+      email: normalizedEmail,
+      otp
+    });
+    return { email: normalizedEmail };
+  };
+
   const loginWithEmail = async (email, password) => {
-    const result = await signInWithEmailAndPassword(auth, email, password);
+    const normalizedEmail = email.trim().toLowerCase();
+    const result = await signInWithEmailAndPassword(auth, normalizedEmail, password);
 
-    if (!result.user.emailVerified) {
-      await signOut(auth).catch(() => {});
-      throw new Error('Please verify your email from Gmail before logging in.');
+    try {
+      const user = await completeFirebaseLogin(result.user);
+      localStorage.removeItem(`mbc_pending_signup_${normalizedEmail}`);
+      return user;
+    } catch (err) {
+      if (err.code === 'EMAIL_NOT_VERIFIED') {
+        await sendEmailOtp({
+          email: normalizedEmail,
+          name: result.user.displayName || normalizedEmail.split('@')[0]
+        });
+        await signOut(auth).catch(() => {});
+      }
+      throw err;
     }
-
-    return completeFirebaseLogin(result.user);
   };
 
   const createAccount = async ({ fullName, email, password, mobileNumber }) => {
-    const result = await createUserWithEmailAndPassword(auth, email, password);
-    await updateProfile(result.user, { displayName: fullName });
-    await sendEmailVerification(result.user);
-    await signOut(auth).catch(() => {});
-    return { verificationSent: true };
+    const normalizedEmail = email.trim().toLowerCase();
+    await sendEmailOtp({ email: normalizedEmail, name: fullName });
+    localStorage.setItem(`mbc_pending_signup_${normalizedEmail}`, JSON.stringify({
+      name: fullName,
+      mobileNumber,
+      password
+    }));
+    return { otpSent: true, email: normalizedEmail };
+  };
+
+  const verifySignupOtp = async ({ email, otp }) => {
+    const normalizedEmail = email.trim().toLowerCase();
+    await verifyEmailOtp({ email: normalizedEmail, otp });
+
+    const pendingProfile = JSON.parse(localStorage.getItem(`mbc_pending_signup_${normalizedEmail}`) || '{}');
+    if (!pendingProfile.password) {
+      throw new Error('Signup details expired. Please create your account again.');
+    }
+
+    const result = await createUserWithEmailAndPassword(auth, normalizedEmail, pendingProfile.password);
+    await updateProfile(result.user, { displayName: pendingProfile.name });
+    const user = await completeFirebaseLogin(result.user, pendingProfile);
+    localStorage.removeItem(`mbc_pending_signup_${normalizedEmail}`);
+    return user;
+  };
+
+  const verifyLoginOtp = async ({ email, otp, password }) => {
+    const normalizedEmail = email.trim().toLowerCase();
+    await verifyEmailOtp({ email: normalizedEmail, otp });
+    const result = await signInWithEmailAndPassword(auth, normalizedEmail, password);
+    return completeFirebaseLogin(result.user);
   };
 
   const logout = async () => {
@@ -145,6 +199,9 @@ export const AuthProvider = ({ children }) => {
       loginWithGoogle,
       loginWithEmail,
       createAccount,
+      sendEmailOtp,
+      verifySignupOtp,
+      verifyLoginOtp,
       logout,
       navigateToLogin,
       checkAppState,

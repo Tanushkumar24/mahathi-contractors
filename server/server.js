@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
+import nodemailer from 'nodemailer';
 import { supabase } from './supabase.js';
 import { sendWhatsApp } from './whatsapp.js';
 import { verifyToken, verifyAdmin } from './authMiddleware.js';
@@ -25,6 +26,19 @@ const ADMIN_EMAILS = [
   'tanushkumar2006@gmail.com',
   'simhadri.tanushkumar@gmail.com'
 ];
+
+const smtpPort = Number(process.env.SMTP_PORT || 587);
+const mailTransporter = process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS
+  ? nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: smtpPort,
+      secure: smtpPort === 465,
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS
+      }
+    })
+  : null;
 
 // Security: HTTP headers protection
 app.use(helmet());
@@ -154,6 +168,132 @@ function extractMobile(phoneNumber) {
   return cleaned ? `+${cleaned}` : null;
 }
 
+const normalizeEmail = (email) => (email || '').trim().toLowerCase();
+
+const generateEmailOtp = () => String(Math.floor(100000 + Math.random() * 900000));
+
+async function sendVerificationEmail(email, otp) {
+  if (!mailTransporter) {
+    console.error('[Email OTP] SMTP is not configured. Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM_NAME, and SMTP_FROM_EMAIL.');
+    throw new Error('Email service is not configured.');
+  }
+
+  const fromName = process.env.SMTP_FROM_NAME || 'Mahathi Contractors';
+  const fromEmail = process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER;
+
+  await mailTransporter.sendMail({
+    from: `"${fromName}" <${fromEmail}>`,
+    to: email,
+    subject: 'Your Mahathi Contractors verification code',
+    text: `Your verification code is ${otp}. It is valid for 10 minutes.`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; color: #111827;">
+        <h2 style="margin-bottom: 8px;">Mahathi Contractors</h2>
+        <p>Your verification code is <strong style="font-size: 24px; letter-spacing: 4px;">${otp}</strong>.</p>
+        <p>It is valid for 10 minutes.</p>
+      </div>
+    `
+  });
+}
+
+async function hasVerifiedEmailOtp(email) {
+  const { data, error } = await supabase
+    .from('email_otps')
+    .select('id')
+    .eq('email', email)
+    .eq('verified', true)
+    .gt('expires_at', new Date().toISOString())
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  if (error) throw error;
+  return Boolean(data && data.length > 0);
+}
+
+app.post('/api/auth/send-email-otp', async (req, res) => {
+  const email = normalizeEmail(req.body.email);
+  const name = req.body.name || email?.split('@')[0] || 'Customer';
+
+  if (!email) {
+    return res.status(400).json({ error: 'Email is required.' });
+  }
+
+  try {
+    const otp = generateEmailOtp();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+
+    const { error } = await supabase
+      .from('email_otps')
+      .insert({
+        email,
+        otp,
+        expires_at: expiresAt,
+        verified: false,
+        attempts: 0
+      });
+
+    if (error) throw error;
+
+    await sendVerificationEmail(email, otp);
+
+    return res.status(200).json({
+      message: 'Verification code sent.',
+      email,
+      name
+    });
+  } catch (err) {
+    console.error('Error sending email OTP:', err);
+    return res.status(500).json({ error: err.message || 'Failed to send verification email.' });
+  }
+});
+
+app.post('/api/auth/verify-email-otp', async (req, res) => {
+  const email = normalizeEmail(req.body.email);
+  const otp = String(req.body.otp || '').replace(/\D/g, '');
+
+  if (!email || otp.length !== 6) {
+    return res.status(400).json({ error: 'Email and 6-digit verification code are required.' });
+  }
+
+  try {
+    const { data: records, error } = await supabase
+      .from('email_otps')
+      .select('*')
+      .eq('email', email)
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (error) throw error;
+
+    const record = records?.[0];
+    if (!record) {
+      return res.status(404).json({ error: 'No verification code found. Please resend code.' });
+    }
+
+    if (record.verified) {
+      return res.status(200).json({ verified: true, message: 'Email already verified.' });
+    }
+
+    if (new Date(record.expires_at) < new Date()) {
+      return res.status(410).json({ code: 'EMAIL_OTP_EXPIRED', error: 'Verification code expired. Please resend code.' });
+    }
+
+    const attempts = Number(record.attempts || 0) + 1;
+    if (record.otp !== otp) {
+      await supabase.from('email_otps').update({ attempts }).eq('id', record.id);
+      return res.status(400).json({ error: 'Invalid verification code.' });
+    }
+
+    await supabase.from('email_otps').update({ verified: true, attempts }).eq('id', record.id);
+    await supabase.from('users').update({ email_verified: true }).eq('email', email);
+
+    return res.status(200).json({ verified: true, message: 'Email verified successfully.' });
+  } catch (err) {
+    console.error('Error verifying email OTP:', err);
+    return res.status(500).json({ error: 'Failed to verify email code.' });
+  }
+});
+
 /**
  * Endpoint: Firebase Auth Login
  * POST /api/auth/firebase-login
@@ -170,6 +310,9 @@ app.post('/api/auth/firebase-login', async (req, res) => {
     const email = (decodedToken.email || profile.email || '').toLowerCase();
     const name = profile.name || decodedToken.name || decodedToken.displayName || email?.split('@')[0] || 'Customer';
     const mobileNumber = extractMobile(profile.mobileNumber || decodedToken.phone_number || '');
+    const signInProvider = decodedToken.firebase?.sign_in_provider || '';
+    const isGoogleLogin = signInProvider === 'google.com';
+    const emailVerified = isGoogleLogin || decodedToken.email_verified === true;
 
     if (!email) {
       return res.status(400).json({ error: 'A verified email is required to login.' });
@@ -187,21 +330,32 @@ app.post('/api/auth/firebase-login', async (req, res) => {
     });
 
     if (user) {
+      const otpVerified = user.email_verified === true || await hasVerifiedEmailOtp(email);
+
+      if (!isGoogleLogin && !otpVerified) {
+        return res.status(403).json({
+          code: 'EMAIL_NOT_VERIFIED',
+          error: 'Email is not verified. Please verify the code sent to your email.'
+        });
+      }
+
       const normalizedUser = {
         ...user,
         email: user.email || email,
         mobile_number: user.mobile_number || mobileNumber,
-        role
+        role,
+        email_verified: isGoogleLogin ? true : otpVerified
       };
 
-      if (user.role !== role || !user.email || (mobileNumber && !user.mobile_number)) {
+      if (user.role !== role || !user.email || (mobileNumber && !user.mobile_number) || normalizedUser.email_verified !== user.email_verified) {
         await supabase
           .from('users')
           .update({
             name: user.name || name,
             email,
             mobile_number: user.mobile_number || mobileNumber || null,
-            role
+            role,
+            email_verified: normalizedUser.email_verified
           })
           .eq('id', user.id)
           .then(({ error }) => {
@@ -216,12 +370,22 @@ app.post('/api/auth/firebase-login', async (req, res) => {
       return res.status(200).json({ token, user: normalizedUser });
     }
 
+    const otpVerified = isGoogleLogin || await hasVerifiedEmailOtp(email);
+
+    if (!isGoogleLogin && !otpVerified) {
+      return res.status(403).json({
+        code: 'EMAIL_NOT_VERIFIED',
+        error: 'Email is not verified. Please verify the code sent to your email.'
+      });
+    }
+
     const insertPayload = {
       name,
       email,
       mobile_number: mobileNumber || null,
       city: profile.city || 'Not provided',
-      role
+      role,
+      email_verified: emailVerified || otpVerified
     };
 
     let { data: newUser, error: registerError } = await supabase
@@ -235,7 +399,8 @@ app.post('/api/auth/firebase-login', async (req, res) => {
         name,
         mobile_number: fallbackMobile,
         city: profile.city || 'Not provided',
-        role
+        role,
+        email_verified: emailVerified || otpVerified
       };
       const fallbackResult = await supabase.from('users').insert(fallbackInsert).select();
       newUser = fallbackResult.data;
@@ -247,7 +412,8 @@ app.post('/api/auth/firebase-login', async (req, res) => {
     const createdUser = {
       ...newUser[0],
       email,
-      mobile_number: newUser[0].mobile_number || mobileNumber || ''
+      mobile_number: newUser[0].mobile_number || mobileNumber || '',
+      email_verified: emailVerified || otpVerified
     };
 
     const token = generateAccessToken(createdUser);

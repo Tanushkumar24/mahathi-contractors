@@ -99,6 +99,14 @@ DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE
 # JWT
 JWT_SECRET=your_jwt_secret
 
+# Email OTP SMTP
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=no-reply@mahathicontractors.in
+SMTP_PASS=your_smtp_password
+SMTP_FROM_NAME=Mahathi Contractors
+SMTP_FROM_EMAIL=no-reply@mahathicontractors.in
+
 # WhatsApp/Twilio
 TWILIO_ACCOUNT_SID=your_account_sid
 TWILIO_AUTH_TOKEN=your_auth_token

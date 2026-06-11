@@ -3,9 +3,9 @@ import { Calendar, Users, Wrench, Star } from 'lucide-react';
 import AnimatedCounter from '../shared/AnimatedCounter';
 
 const stats = [
-  { end: 5, suffix: '+', label: 'Years Experience', icon: Calendar },
+  { end: 20, suffix: '+', label: 'Founder Experience', icon: Calendar },
   { end: 100, suffix: '+', label: 'Happy Customers', icon: Users },
-  { end: 50, suffix: '+', label: 'Professional Workers', icon: Wrench },
+  { end: 150, suffix: '+', label: 'Completed Services', icon: Wrench },
   { end: 49, suffix: '', prefix: '', label: '4.9 Star Rating', icon: Star },
 ];
 

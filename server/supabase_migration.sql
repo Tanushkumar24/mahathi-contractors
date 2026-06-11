@@ -10,9 +10,23 @@ CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(255) NOT NULL,
     email VARCHAR(255) UNIQUE,
+    email_verified BOOLEAN DEFAULT FALSE,
     mobile_number VARCHAR(15) UNIQUE,
     city VARCHAR(255) DEFAULT 'Not provided',
     role VARCHAR(50) DEFAULT 'user',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT FALSE;
+
+-- 2. Email OTP Verification Table
+CREATE TABLE IF NOT EXISTS email_otps (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email VARCHAR(255) NOT NULL,
+    otp VARCHAR(6) NOT NULL,
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    verified BOOLEAN DEFAULT FALSE,
+    attempts INTEGER DEFAULT 0,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -83,6 +97,7 @@ CREATE TABLE IF NOT EXISTS reviews (
 -- Index optimization for queries
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_mobile ON users(mobile_number);
+CREATE INDEX IF NOT EXISTS idx_email_otps_email ON email_otps(email);
 CREATE INDEX IF NOT EXISTS idx_bookings_phone ON bookings(contact_phone);
 
 -- ============================================================================
@@ -91,6 +106,7 @@ CREATE INDEX IF NOT EXISTS idx_bookings_phone ON bookings(contact_phone);
 
 -- Enable RLS on all tables
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE email_otps ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bookings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE leads ENABLE ROW LEVEL SECURITY;
 ALTER TABLE projects ENABLE ROW LEVEL SECURITY;
@@ -107,6 +123,10 @@ ON users FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 CREATE POLICY "Allow public read-only of users profiles by matching id" 
 ON users FOR SELECT USING (true);
+
+-- B. Email OTP RLS Policies
+CREATE POLICY "Allow service role full access on email_otps" 
+ON email_otps FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 -- C. Bookings RLS Policies
 CREATE POLICY "Allow service role full access on bookings" 

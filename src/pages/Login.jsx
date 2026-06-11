@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowRight, HardHat, Loader2, Mail, UserPlus } from "lucide-react";
+import { ArrowRight, HardHat, Loader2, Mail, ShieldCheck, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import AuthLayout from "@/components/AuthLayout";
 import { Button } from "@/components/ui/button";
@@ -22,13 +22,26 @@ function routeFor(user) {
 }
 
 const cleanMobile = (value) => value.replace(/\D/g, "").slice(0, 10);
+const cleanOtp = (value) => value.replace(/\D/g, "").slice(0, 6);
 
 export default function Login() {
   const navigate = useNavigate();
-  const { loginWithEmail, loginWithGoogle, createAccount } = useAuth();
+  const {
+    loginWithEmail,
+    loginWithGoogle,
+    createAccount,
+    sendEmailOtp,
+    verifySignupOtp,
+    verifyLoginOtp,
+  } = useAuth();
+
   const [mode, setMode] = useState("login");
   const [loading, setLoading] = useState("");
-  const [verificationMessage, setVerificationMessage] = useState("");
+  const [notice, setNotice] = useState("");
+  const [otp, setOtp] = useState("");
+  const [otpContext, setOtpContext] = useState(null);
+  const [otpEmail, setOtpEmail] = useState("");
+  const [otpPassword, setOtpPassword] = useState("");
   const [form, setForm] = useState({
     fullName: "",
     email: "",
@@ -38,8 +51,18 @@ export default function Login() {
   });
 
   const update = (key, value) => {
-    setVerificationMessage("");
+    setNotice("");
     setForm((prev) => ({ ...prev, [key]: key === "mobileNumber" ? cleanMobile(value) : value }));
+  };
+
+  const showOtpScreen = ({ context, email, password = "" }) => {
+    const normalizedEmail = email.trim().toLowerCase();
+    setOtp("");
+    setOtpContext(context);
+    setOtpEmail(normalizedEmail);
+    setOtpPassword(password);
+    setMode("otp");
+    setNotice(`Verification code sent to ${normalizedEmail}. It is valid for 10 minutes.`);
   };
 
   const finish = (user) => {
@@ -51,10 +74,16 @@ export default function Login() {
     event.preventDefault();
     setLoading("email");
     try {
-      const user = await loginWithEmail(form.email.trim(), form.password);
+      const email = form.email.trim();
+      const user = await loginWithEmail(email, form.password);
       finish(user);
     } catch (err) {
-      toast.error(err.message || "Login failed. Please try again.");
+      if (err.code === "EMAIL_NOT_VERIFIED") {
+        showOtpScreen({ context: "login", email: form.email, password: form.password });
+        toast.success("Verification code sent to your email.");
+      } else {
+        toast.error(err.message || "Login failed. Please try again.");
+      }
     } finally {
       setLoading("");
     }
@@ -93,10 +122,8 @@ export default function Login() {
         password: form.password,
         mobileNumber: `+91${form.mobileNumber}`,
       });
-      setVerificationMessage("Verification email sent. Please check your Gmail and verify your email.");
-      setMode("login");
-      setForm((prev) => ({ ...prev, password: "", confirmPassword: "" }));
-      toast.success("Verification email sent.");
+      showOtpScreen({ context: "signup", email: form.email });
+      toast.success("Verification code sent.");
     } catch (err) {
       toast.error(err.message || "Account creation failed. Please try again.");
     } finally {
@@ -104,24 +131,77 @@ export default function Login() {
     }
   };
 
+  const handleVerifyOtp = async (event) => {
+    event.preventDefault();
+
+    if (otp.length !== 6) {
+      toast.error("Please enter the 6-digit verification code.");
+      return;
+    }
+
+    setLoading("otp");
+    try {
+      const user = otpContext === "signup"
+        ? await verifySignupOtp({ email: otpEmail, otp })
+        : await verifyLoginOtp({ email: otpEmail, otp, password: otpPassword });
+      finish(user);
+    } catch (err) {
+      toast.error(err.message || "Verification failed. Please try again.");
+    } finally {
+      setLoading("");
+    }
+  };
+
+  const handleResendOtp = async () => {
+    setLoading("resend");
+    try {
+      await sendEmailOtp({
+        email: otpEmail,
+        name: form.fullName.trim() || otpEmail.split("@")[0],
+      });
+      setNotice(`New verification code sent to ${otpEmail}. It is valid for 10 minutes.`);
+      toast.success("Verification code resent.");
+    } catch (err) {
+      toast.error(err.message || "Could not resend verification code.");
+    } finally {
+      setLoading("");
+    }
+  };
+
+  const backToLogin = () => {
+    setMode("login");
+    setOtp("");
+    setOtpContext(null);
+    setOtpEmail("");
+    setOtpPassword("");
+    setNotice("");
+  };
+
+  const title = mode === "create" ? "Create Account" : mode === "otp" ? "Verify Email" : "Login";
+  const subtitle = mode === "create"
+    ? "Create your account with email verification from Mahathi Contractors."
+    : mode === "otp"
+      ? "Enter the 6-digit code sent to your email."
+      : "Email login first. Google and guest booking are available below.";
+
   return (
     <AuthLayout
       icon={HardHat}
-      title={mode === "login" ? "Login" : "Create Account"}
-      subtitle={mode === "login" ? "Email login first. Google and guest booking are available below." : "Create your account. No mobile verification code required."}
+      title={title}
+      subtitle={subtitle}
       footer={
         <Link to="/" className="text-blue-400 hover:text-blue-300">
           Back to website
         </Link>
       }
     >
-      {verificationMessage && (
+      {notice && (
         <div className="mb-5 rounded-xl border border-green-500/20 bg-green-500/10 p-4 text-sm text-green-500">
-          {verificationMessage}
+          {notice}
         </div>
       )}
 
-      {mode === "login" ? (
+      {mode === "login" && (
         <>
           <form onSubmit={handleEmailLogin} className="space-y-4">
             <div className="space-y-2">
@@ -167,7 +247,9 @@ export default function Login() {
             </Link>
           </div>
         </>
-      ) : (
+      )}
+
+      {mode === "create" && (
         <form onSubmit={handleCreateAccount} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="fullName">Full Name</Label>
@@ -208,8 +290,38 @@ export default function Login() {
             {loading === "create" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UserPlus className="mr-2 h-4 w-4" />}
             Create Account
           </Button>
-          <Button type="button" variant="ghost" onClick={() => setMode("login")} className="w-full">
+          <Button type="button" variant="ghost" onClick={backToLogin} className="w-full">
             Back to Login
+          </Button>
+        </form>
+      )}
+
+      {mode === "otp" && (
+        <form onSubmit={handleVerifyOtp} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="emailOtp">Email Verification Code</Label>
+            <Input
+              id="emailOtp"
+              type="text"
+              inputMode="numeric"
+              maxLength={6}
+              value={otp}
+              onChange={(e) => setOtp(cleanOtp(e.target.value))}
+              placeholder="123456"
+              className="h-12 text-center text-lg font-semibold tracking-[0.35em]"
+              required
+            />
+          </div>
+          <Button type="submit" disabled={!!loading} className="w-full h-12 rounded-xl font-semibold">
+            {loading === "otp" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4" />}
+            Verify and Continue
+          </Button>
+          <Button type="button" variant="outline" onClick={handleResendOtp} disabled={!!loading} className="w-full h-12 rounded-xl font-semibold">
+            {loading === "resend" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
+            Resend Code
+          </Button>
+          <Button type="button" variant="ghost" onClick={otpContext === "signup" ? () => setMode("create") : backToLogin} className="w-full">
+            {otpContext === "signup" ? "Back to Create Account" : "Back to Login"}
           </Button>
         </form>
       )}
