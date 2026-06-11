@@ -187,3 +187,19 @@ ALTER TABLE refresh_tokens ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Allow service role full access on refresh_tokens" 
 ON refresh_tokens FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+-- ============================================================================
+-- Service Role Grants
+-- ============================================================================
+
+-- Required for the Express backend when Supabase table privileges have been
+-- tightened. The service_role key bypasses RLS, but it still needs SQL grants.
+GRANT USAGE ON SCHEMA public TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO service_role;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO service_role;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO service_role;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+GRANT USAGE, SELECT ON SEQUENCES TO service_role;

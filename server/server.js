@@ -215,6 +215,15 @@ const isMissingEmailVerifiedColumn = (error) =>
 
 const OPTIONAL_USER_COLUMNS = ['firebase_uid', 'photo_url', 'email_verified', 'city', 'mobile_number'];
 
+const isSupabasePermissionDenied = (error) => error?.code === '42501' || /permission denied/i.test(error?.message || '');
+
+const supabasePermissionError = (action, error) => ({
+  code: 'SUPABASE_PERMISSION_DENIED',
+  error: `Database permission denied while trying to ${action}.`,
+  details: error?.message || 'permission denied',
+  hint: 'Run the service_role GRANT statements from server/supabase_migration.sql in the Supabase SQL editor.'
+});
+
 const removePayloadKeys = (payload, keys) => {
   const next = { ...payload };
   keys.forEach((key) => {
@@ -502,6 +511,10 @@ app.post('/api/auth/firebase-login', async (req, res) => {
       const createResult = await createUserProfile(profilePayload);
 
       if (createResult.error) {
+        if (isSupabasePermissionDenied(createResult.error)) {
+          return res.status(500).json(supabasePermissionError('create user profile', createResult.error));
+        }
+
         return res.status(500).json({
           code: 'SUPABASE_USER_INSERT_FAILED',
           error: 'Failed to create user profile.',
@@ -715,6 +728,10 @@ app.get('/api/auth/me', verifyToken, async (req, res) => {
     let { user, error } = await findUserProfileById(req.user.id);
 
     if (error) {
+      if (isSupabasePermissionDenied(error)) {
+        return res.status(500).json(supabasePermissionError('load user profile', error));
+      }
+
       return res.status(500).json({
         code: 'SUPABASE_USER_SELECT_FAILED',
         error: 'Could not load user profile from database.',
@@ -726,6 +743,10 @@ app.get('/api/auth/me', verifyToken, async (req, res) => {
       const byEmail = await findUserProfileByEmail(email);
 
       if (byEmail.error) {
+        if (isSupabasePermissionDenied(byEmail.error)) {
+          return res.status(500).json(supabasePermissionError('load user profile by email', byEmail.error));
+        }
+
         return res.status(500).json({
           code: 'SUPABASE_USER_SELECT_FAILED',
           error: 'Could not load user profile by email.',
@@ -753,6 +774,10 @@ app.get('/api/auth/me', verifyToken, async (req, res) => {
       const createResult = await createUserProfile(profilePayload);
 
       if (createResult.error) {
+        if (isSupabasePermissionDenied(createResult.error)) {
+          return res.status(500).json(supabasePermissionError('recreate missing user profile', createResult.error));
+        }
+
         return res.status(500).json({
           code: 'SUPABASE_USER_INSERT_FAILED',
           error: 'User profile was missing and could not be recreated.',
@@ -866,23 +891,19 @@ app.post('/api/bookings', async (req, res) => {
     const created = newBooking[0];
     const bookingId = created.id.slice(-6).toUpperCase();
 
-    // Generate WhatsApp Notification Messages
-    const customerMsg = `🏗️ MBC - Mahathi Building Contractors
+    // Customer WhatsApp confirmation via whatsapp-web.js.
+    // WARNING: This uses unofficial WhatsApp Web automation and may require
+    // occasional QR re-scanning if the personal WhatsApp session disconnects.
+    const customerMsg = `Hello ${contact_name} \u{1F44B}
 
-Hello ${contact_name},
+Your booking with Mahathi Building Contractors has been received successfully.
 
-Your booking has been successfully received.
-
-🔖 Booking ID: ${bookingId}
-🛠️ Service: ${service_name}
-📅 Date: ${date}
-🕐 Time: ${time_slot}
-📍 Location: ${address}
+Service: ${service_name}
+Date: ${date}
 
 Our team will contact you shortly.
-Thank you for choosing MBC.
 
-"Today Under Construction. Tomorrow Your Dream Home."`;
+- Mahathi Building Contractors`;
 
     const adminMsg = `🔔 New Booking Alert — MBC
 
