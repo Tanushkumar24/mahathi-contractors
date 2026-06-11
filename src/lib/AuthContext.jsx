@@ -65,10 +65,10 @@ export const AuthProvider = ({ children }) => {
   const completeFirebaseLogin = async (firebaseUser, profile = {}) => {
     try {
       const firebaseToken = await firebaseUser.getIdToken();
-      const res = await api.post('/api/auth/firebase-login', {
-        firebaseToken,
-        profile
-      });
+      const payload = Object.keys(profile).length > 0
+        ? { firebaseToken, profile }
+        : { firebaseToken };
+      const res = await api.post('/api/auth/firebase-login', payload);
       const { token, user: loggedUser } = res.data;
 
       if (token && loggedUser) {

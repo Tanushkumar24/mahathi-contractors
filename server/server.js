@@ -336,127 +336,154 @@ app.post('/api/auth/firebase-login', async (req, res) => {
   }
 
   try {
-    const decodedToken = await admin.auth().verifyIdToken(firebaseToken);
-    const email = (decodedToken.email || profile.email || '').toLowerCase();
-    const name = profile.name || decodedToken.name || decodedToken.displayName || email?.split('@')[0] || 'Customer';
-    const mobileNumber = extractMobile(profile.mobileNumber || decodedToken.phone_number || '');
-    const signInProvider = decodedToken.firebase?.sign_in_provider || '';
-    const isGoogleLogin = signInProvider === 'google.com';
-    const emailVerified = isGoogleLogin || decodedToken.email_verified === true;
+    const missingEnvVars = [
+      'JWT_SECRET',
+      'FIREBASE_PROJECT_ID',
+      'FIREBASE_CLIENT_EMAIL',
+      'FIREBASE_PRIVATE_KEY',
+      'SUPABASE_URL',
+      'SUPABASE_SERVICE_ROLE_KEY'
+    ].filter((name) => !process.env[name]);
 
-    if (!email) {
-      return res.status(400).json({ error: 'A verified email is required to login.' });
+    if (missingEnvVars.length > 0) {
+      console.error('[firebase-login] Missing required environment variables:', missingEnvVars);
+      return res.status(500).json({
+        code: 'MISSING_ENV_VARS',
+        error: `Backend auth is missing required environment variables: ${missingEnvVars.join(', ')}`
+      });
+    }
+
+    let decodedToken;
+    try {
+      decodedToken = await admin.auth().verifyIdToken(firebaseToken);
+    } catch (error) {
+      console.error('[firebase-login] Firebase token verify error:', error);
+      return res.status(401).json({
+        code: 'FIREBASE_TOKEN_VERIFY_FAILED',
+        error: 'Firebase token verification failed.'
+      });
+    }
+
+    const uid = decodedToken.uid;
+    const email = (decodedToken.email || '').trim().toLowerCase();
+    const name = profile.name || decodedToken.name || decodedToken.displayName || email.split('@')[0] || 'Customer';
+    const picture = decodedToken.picture || profile.picture || '';
+    const mobileNumber = extractMobile(profile.mobileNumber || decodedToken.phone_number || '');
+
+    if (!uid || !email) {
+      console.error('[firebase-login] Firebase token missing uid or email:', {
+        uid,
+        email,
+        tokenProvider: decodedToken.firebase?.sign_in_provider
+      });
+      return res.status(400).json({ error: 'Firebase token must include a user id and email.' });
     }
 
     const role = ADMIN_EMAILS.includes(email) ? 'admin' : 'user';
-    const { data: allUsers, error: userError } = await supabase.from('users').select('*');
 
-    if (userError) throw userError;
+    const { data: existingUsers, error: queryError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', email)
+      .limit(1);
 
-    const user = (allUsers || []).find((item) => {
-      const itemEmail = (item.email || '').toLowerCase();
-      const itemPhone = (item.mobile_number || '').replace(/\D/g, '');
-      return itemEmail === email || (mobileNumber && itemPhone === mobileNumber);
-    });
-
-    if (user) {
-      const otpVerified = isGoogleLogin ? true : (user.email_verified === true || await hasVerifiedEmailOtp(email));
-
-      if (!isGoogleLogin && !otpVerified) {
-        return res.status(403).json({
-          code: 'EMAIL_NOT_VERIFIED',
-          error: 'Email is not verified. Please verify the code sent to your email.'
-        });
-      }
-
-      const normalizedUser = {
-        ...user,
-        email: user.email || email,
-        mobile_number: user.mobile_number || mobileNumber,
-        role,
-        email_verified: isGoogleLogin ? true : otpVerified
-      };
-
-      if (user.role !== role || !user.email || (mobileNumber && !user.mobile_number) || normalizedUser.email_verified !== user.email_verified) {
-        const { error } = await updateUserProfile(user.id, {
-          name: user.name || name,
-          email,
-          mobile_number: user.mobile_number || mobileNumber || null,
-          role,
-          email_verified: normalizedUser.email_verified
-        });
-
-        if (error) {
-          console.warn('User profile update skipped:', error.message);
-        }
-      }
-
-      const token = generateAccessToken(normalizedUser);
-      await generateAndSetRefreshToken(req, res, user.id);
-      return res.status(200).json({ token, user: normalizedUser });
+    if (queryError) {
+      console.error('[firebase-login] Supabase user query error:', queryError);
+      return res.status(500).json({ error: 'Failed to load user profile.' });
     }
 
-    const otpVerified = isGoogleLogin || await hasVerifiedEmailOtp(email);
+    let user = existingUsers?.[0] || null;
+    const createdUser = !user;
 
-    if (!isGoogleLogin && !otpVerified) {
-      return res.status(403).json({
-        code: 'EMAIL_NOT_VERIFIED',
-        error: 'Email is not verified. Please verify the code sent to your email.'
-      });
-    }
-
-    const insertPayload = {
-      name,
-      email,
-      mobile_number: mobileNumber || null,
-      city: profile.city || 'Not provided',
-      role,
-      email_verified: emailVerified || otpVerified
-    };
-
-    let { data: newUser, error: registerError } = await insertUserProfile(insertPayload);
-
-    if (registerError && /mobile_number|null/i.test(registerError.message || '')) {
-      const fallbackMobile = mobileNumber || `9${String(Date.now()).slice(-9)}`;
-      const fallbackInsert = {
+    if (!user) {
+      const basePayload = {
+        firebase_uid: uid,
         name,
         email,
-        mobile_number: fallbackMobile,
-        city: profile.city || 'Not provided',
+        mobile_number: mobileNumber || null,
+        city: 'Not provided',
         role,
-        email_verified: emailVerified || otpVerified
+        email_verified: true,
+        photo_url: picture
       };
-      const fallbackResult = await insertUserProfile(fallbackInsert);
-      newUser = fallbackResult.data;
-      registerError = fallbackResult.error;
+
+      let createPayload = basePayload;
+      let insertResult = await insertUserProfile(createPayload);
+
+      if (insertResult.error && /firebase_uid|photo_url/i.test(insertResult.error.message || '')) {
+        console.warn('[firebase-login] Optional user columns missing. Retrying create without firebase_uid/photo_url:', insertResult.error.message);
+        const { firebase_uid: _firebaseUid, photo_url: _photoUrl, ...fallbackPayload } = createPayload;
+        createPayload = fallbackPayload;
+        insertResult = await insertUserProfile(createPayload);
+      }
+
+      if (insertResult.error && /mobile_number|null/i.test(insertResult.error.message || '')) {
+        console.warn('[firebase-login] mobile_number appears required. Retrying create with generated placeholder:', insertResult.error.message);
+        createPayload = {
+          ...createPayload,
+          mobile_number: `9${String(Date.now()).slice(-9)}`
+        };
+        insertResult = await insertUserProfile(createPayload);
+      }
+
+      if (insertResult.error) {
+        console.error('[firebase-login] Supabase user insert error:', insertResult.error);
+        return res.status(500).json({ error: 'Failed to create user profile.' });
+      }
+
+      user = insertResult.data?.[0];
+    } else if (user.role !== role || user.name !== name || user.email_verified !== true) {
+      const updatePayload = {
+        name: user.name || name,
+        role,
+        email_verified: true
+      };
+      const { error: updateError } = await updateUserProfile(user.id, updatePayload);
+
+      if (updateError) {
+        console.error('[firebase-login] Supabase user update error:', updateError);
+      } else {
+        user = {
+          ...user,
+          ...updatePayload
+        };
+      }
     }
 
-    if (registerError) throw registerError;
+    if (!user?.id) {
+      console.error('[firebase-login] Supabase returned no user after load/create:', { email, uid });
+      return res.status(500).json({ error: 'User profile was not returned by database.' });
+    }
 
-    const createdUser = {
-      ...newUser[0],
+    const normalizedUser = {
+      ...user,
       email,
-      mobile_number: newUser[0].mobile_number || mobileNumber || '',
-      email_verified: emailVerified || otpVerified
+      name: user.name || name,
+      role,
+      email_verified: true,
+      picture
     };
 
-    const token = generateAccessToken(createdUser);
-    await generateAndSetRefreshToken(req, res, createdUser.id);
-    return res.status(201).json({ token, user: createdUser });
+    let token;
+    try {
+      token = generateAccessToken(normalizedUser);
+    } catch (error) {
+      console.error('[firebase-login] JWT creation error:', error);
+      return res.status(500).json({ error: 'Failed to create login session.' });
+    }
+
+    try {
+      await generateAndSetRefreshToken(req, res, normalizedUser.id);
+    } catch (error) {
+      console.error('[firebase-login] Refresh token creation error:', error);
+    }
+
+    return res.status(createdUser ? 201 : 200).json({
+      token,
+      user: normalizedUser
+    });
   } catch (err) {
-    console.error('Error in firebase-login:', err);
-    if (err.code === 'auth/id-token-expired') {
-      return res.status(401).json({ error: 'Firebase token expired. Please login again.' });
-    }
-    if (err.code === 'auth/argument-error') {
-      return res.status(400).json({ error: 'Invalid Firebase token format.' });
-    }
-    if (typeof err.code === 'string' && err.code.startsWith('auth/')) {
-      return res.status(401).json({
-        code: 'FIREBASE_TOKEN_VERIFICATION_FAILED',
-        error: 'Firebase token verification failed. Check backend Firebase Admin project credentials.'
-      });
-    }
+    console.error('[firebase-login] Unexpected error:', err);
     return res.status(500).json({ error: 'Authentication failed.' });
   }
 });
