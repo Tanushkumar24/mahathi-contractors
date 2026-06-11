@@ -1,8 +1,9 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import api from './api';
-import { auth, googleProvider } from '../firebase';
+import { auth } from '../firebase';
 import {
   createUserWithEmailAndPassword,
+  GoogleAuthProvider,
   signInWithEmailAndPassword,
   signInWithPopup,
   signOut,
@@ -94,7 +95,8 @@ export const AuthProvider = ({ children }) => {
   };
 
   const loginWithGoogle = async () => {
-    const result = await signInWithPopup(auth, googleProvider);
+    const provider = new GoogleAuthProvider();
+    const result = await signInWithPopup(auth, provider);
     return completeFirebaseLogin(result.user);
   };
 

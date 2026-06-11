@@ -210,6 +210,36 @@ async function hasVerifiedEmailOtp(email) {
   return Boolean(data && data.length > 0);
 }
 
+const isMissingEmailVerifiedColumn = (error) =>
+  /email_verified|schema cache.*email_verified/i.test(error?.message || '');
+
+const withoutEmailVerified = (payload) => {
+  const { email_verified: _emailVerified, ...rest } = payload;
+  return rest;
+};
+
+async function insertUserProfile(payload) {
+  let result = await supabase.from('users').insert(payload).select();
+
+  if (result.error && isMissingEmailVerifiedColumn(result.error)) {
+    console.warn('users.email_verified column is missing. Retrying user insert without it. Apply supabase_migration.sql to enable email verification persistence.');
+    result = await supabase.from('users').insert(withoutEmailVerified(payload)).select();
+  }
+
+  return result;
+}
+
+async function updateUserProfile(userId, payload) {
+  let result = await supabase.from('users').update(payload).eq('id', userId);
+
+  if (result.error && isMissingEmailVerifiedColumn(result.error)) {
+    console.warn('users.email_verified column is missing. Retrying user update without it. Apply supabase_migration.sql to enable email verification persistence.');
+    result = await supabase.from('users').update(withoutEmailVerified(payload)).eq('id', userId);
+  }
+
+  return result;
+}
+
 app.post('/api/auth/send-email-otp', async (req, res) => {
   const email = normalizeEmail(req.body.email);
   const name = req.body.name || email?.split('@')[0] || 'Customer';
@@ -330,7 +360,7 @@ app.post('/api/auth/firebase-login', async (req, res) => {
     });
 
     if (user) {
-      const otpVerified = user.email_verified === true || await hasVerifiedEmailOtp(email);
+      const otpVerified = isGoogleLogin ? true : (user.email_verified === true || await hasVerifiedEmailOtp(email));
 
       if (!isGoogleLogin && !otpVerified) {
         return res.status(403).json({
@@ -348,21 +378,17 @@ app.post('/api/auth/firebase-login', async (req, res) => {
       };
 
       if (user.role !== role || !user.email || (mobileNumber && !user.mobile_number) || normalizedUser.email_verified !== user.email_verified) {
-        await supabase
-          .from('users')
-          .update({
-            name: user.name || name,
-            email,
-            mobile_number: user.mobile_number || mobileNumber || null,
-            role,
-            email_verified: normalizedUser.email_verified
-          })
-          .eq('id', user.id)
-          .then(({ error }) => {
-            if (error) {
-              console.warn('User profile update skipped:', error.message);
-            }
-          });
+        const { error } = await updateUserProfile(user.id, {
+          name: user.name || name,
+          email,
+          mobile_number: user.mobile_number || mobileNumber || null,
+          role,
+          email_verified: normalizedUser.email_verified
+        });
+
+        if (error) {
+          console.warn('User profile update skipped:', error.message);
+        }
       }
 
       const token = generateAccessToken(normalizedUser);
@@ -388,21 +414,19 @@ app.post('/api/auth/firebase-login', async (req, res) => {
       email_verified: emailVerified || otpVerified
     };
 
-    let { data: newUser, error: registerError } = await supabase
-      .from('users')
-      .insert(insertPayload)
-      .select();
+    let { data: newUser, error: registerError } = await insertUserProfile(insertPayload);
 
-    if (registerError && /email|mobile_number|null/i.test(registerError.message || '')) {
+    if (registerError && /mobile_number|null/i.test(registerError.message || '')) {
       const fallbackMobile = mobileNumber || `9${String(Date.now()).slice(-9)}`;
       const fallbackInsert = {
         name,
+        email,
         mobile_number: fallbackMobile,
         city: profile.city || 'Not provided',
         role,
         email_verified: emailVerified || otpVerified
       };
-      const fallbackResult = await supabase.from('users').insert(fallbackInsert).select();
+      const fallbackResult = await insertUserProfile(fallbackInsert);
       newUser = fallbackResult.data;
       registerError = fallbackResult.error;
     }
@@ -426,6 +450,12 @@ app.post('/api/auth/firebase-login', async (req, res) => {
     }
     if (err.code === 'auth/argument-error') {
       return res.status(400).json({ error: 'Invalid Firebase token format.' });
+    }
+    if (typeof err.code === 'string' && err.code.startsWith('auth/')) {
+      return res.status(401).json({
+        code: 'FIREBASE_TOKEN_VERIFICATION_FAILED',
+        error: 'Firebase token verification failed. Check backend Firebase Admin project credentials.'
+      });
     }
     return res.status(500).json({ error: 'Authentication failed.' });
   }

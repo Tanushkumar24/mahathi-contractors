@@ -45,6 +45,16 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
+    const authEndpointsWithoutRefresh = [
+      '/api/auth/firebase-login',
+      '/api/auth/send-email-otp',
+      '/api/auth/verify-email-otp',
+      '/api/auth/logout'
+    ];
+
+    if (authEndpointsWithoutRefresh.includes(originalRequest?.url)) {
+      return Promise.reject(error);
+    }
 
     // Handle session expiration or unauthorized request (401/403)
     if (
