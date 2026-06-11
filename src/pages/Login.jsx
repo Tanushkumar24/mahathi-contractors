@@ -7,7 +7,7 @@ import { Phone, ShieldCheck, UserCheck, Loader2, ArrowLeft, Send } from "lucide-
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import AuthLayout from "@/components/AuthLayout";
 import { toast } from "sonner";
-import { auth } from "@/lib/firebase";
+import { auth } from "../firebase";
 import { RecaptchaVerifier, signInWithPhoneNumber } from "firebase/auth";
 
 export default function Login() {
