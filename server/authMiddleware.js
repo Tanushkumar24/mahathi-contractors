@@ -32,7 +32,11 @@ export function verifyToken(req, res, next) {
     req.user = decoded;
     next();
   } catch (err) {
-    return res.status(403).json({ error: 'Invalid or expired token.' });
+    console.error('[authMiddleware] JWT verification failure:', err);
+    return res.status(403).json({
+      code: 'JWT_VERIFICATION_FAILED',
+      error: 'Invalid or expired token.'
+    });
   }
 }
 

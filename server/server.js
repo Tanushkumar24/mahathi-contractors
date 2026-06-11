@@ -213,31 +213,115 @@ async function hasVerifiedEmailOtp(email) {
 const isMissingEmailVerifiedColumn = (error) =>
   /email_verified|schema cache.*email_verified/i.test(error?.message || '');
 
-const withoutEmailVerified = (payload) => {
-  const { email_verified: _emailVerified, ...rest } = payload;
-  return rest;
+const OPTIONAL_USER_COLUMNS = ['firebase_uid', 'photo_url', 'email_verified'];
+
+const removePayloadKeys = (payload, keys) => {
+  const next = { ...payload };
+  keys.forEach((key) => {
+    delete next[key];
+  });
+  return next;
+};
+
+const getMissingUserColumns = (error) => {
+  const message = error?.message || '';
+  return OPTIONAL_USER_COLUMNS.filter((column) =>
+    new RegExp(`${column}|schema cache.*${column}|column .*${column}`, 'i').test(message)
+  );
 };
 
 async function insertUserProfile(payload) {
-  let result = await supabase.from('users').insert(payload).select();
+  let createPayload = { ...payload };
+  let result = await supabase.from('users').insert(createPayload).select();
 
-  if (result.error && isMissingEmailVerifiedColumn(result.error)) {
-    console.warn('users.email_verified column is missing. Retrying user insert without it. Apply supabase_migration.sql to enable email verification persistence.');
-    result = await supabase.from('users').insert(withoutEmailVerified(payload)).select();
+  const missingColumns = getMissingUserColumns(result.error);
+  if (result.error && missingColumns.length > 0) {
+    console.warn('[users] Optional columns missing. Retrying user insert without:', missingColumns);
+    createPayload = removePayloadKeys(createPayload, missingColumns);
+    result = await supabase.from('users').insert(createPayload).select();
+  }
+
+  if (result.error && /mobile_number|null/i.test(result.error.message || '') && !createPayload.mobile_number) {
+    console.warn('[users] mobile_number appears required. Retrying user insert with generated placeholder:', result.error.message);
+    createPayload = {
+      ...createPayload,
+      mobile_number: `9${String(Date.now()).slice(-9)}`
+    };
+    result = await supabase.from('users').insert(createPayload).select();
   }
 
   return result;
 }
 
 async function updateUserProfile(userId, payload) {
-  let result = await supabase.from('users').update(payload).eq('id', userId);
+  let updatePayload = { ...payload };
+  let result = await supabase.from('users').update(updatePayload).eq('id', userId);
 
-  if (result.error && isMissingEmailVerifiedColumn(result.error)) {
-    console.warn('users.email_verified column is missing. Retrying user update without it. Apply supabase_migration.sql to enable email verification persistence.');
-    result = await supabase.from('users').update(withoutEmailVerified(payload)).eq('id', userId);
+  const missingColumns = getMissingUserColumns(result.error);
+  if (result.error && missingColumns.length > 0) {
+    console.warn('[users] Optional columns missing. Retrying user update without:', missingColumns);
+    updatePayload = removePayloadKeys(updatePayload, missingColumns);
+    result = await supabase.from('users').update(updatePayload).eq('id', userId);
   }
 
   return result;
+}
+
+function buildUserProfilePayload({ uid, email, name, picture = '', mobileNumber = '', role }) {
+  return {
+    firebase_uid: uid || null,
+    email,
+    name: name || email?.split('@')[0] || 'Customer',
+    role,
+    mobile_number: mobileNumber || null,
+    city: 'Not provided',
+    email_verified: true,
+    photo_url: picture || ''
+  };
+}
+
+async function findUserProfileByEmail(email) {
+  const { data, error } = await supabase
+    .from('users')
+    .select('*')
+    .eq('email', email)
+    .limit(1);
+
+  if (error) {
+    console.error('Supabase error:', error);
+    console.error('[users] Supabase select by email failed:', { email, error });
+    return { user: null, error };
+  }
+
+  return { user: data?.[0] || null, error: null };
+}
+
+async function findUserProfileById(id) {
+  const { data, error } = await supabase
+    .from('users')
+    .select('*')
+    .eq('id', id)
+    .limit(1);
+
+  if (error) {
+    console.error('Supabase error:', error);
+    console.error('[users] Supabase select by id failed:', { id, error });
+    return { user: null, error };
+  }
+
+  return { user: data?.[0] || null, error: null };
+}
+
+async function createUserProfile(profile) {
+  const result = await insertUserProfile(profile);
+
+  if (result.error) {
+    console.error('Supabase error:', result.error);
+    console.error('[users] Supabase insert failed:', { profile, error: result.error });
+    return { user: null, error: result.error };
+  }
+
+  return { user: result.data?.[0] || null, error: null };
 }
 
 app.post('/api/auth/send-email-otp', async (req, res) => {
@@ -381,57 +465,39 @@ app.post('/api/auth/firebase-login', async (req, res) => {
 
     const role = ADMIN_EMAILS.includes(email) ? 'admin' : 'user';
 
-    const { data: existingUsers, error: queryError } = await supabase
-      .from('users')
-      .select('*')
-      .eq('email', email)
-      .limit(1);
+    const { user: existingUser, error: queryError } = await findUserProfileByEmail(email);
 
     if (queryError) {
-      console.error('[firebase-login] Supabase user query error:', queryError);
-      return res.status(500).json({ error: 'Failed to load user profile.' });
+      return res.status(500).json({
+        code: 'SUPABASE_USER_SELECT_FAILED',
+        error: 'Failed to load user profile.',
+        details: queryError.message
+      });
     }
 
-    let user = existingUsers?.[0] || null;
+    let user = existingUser;
     const createdUser = !user;
 
     if (!user) {
-      const basePayload = {
-        firebase_uid: uid,
+      const profilePayload = buildUserProfilePayload({
+        uid,
         name,
         email,
-        mobile_number: mobileNumber || null,
-        city: 'Not provided',
+        picture,
+        mobileNumber,
         role,
-        email_verified: true,
-        photo_url: picture
-      };
+      });
+      const createResult = await createUserProfile(profilePayload);
 
-      let createPayload = basePayload;
-      let insertResult = await insertUserProfile(createPayload);
-
-      if (insertResult.error && /firebase_uid|photo_url/i.test(insertResult.error.message || '')) {
-        console.warn('[firebase-login] Optional user columns missing. Retrying create without firebase_uid/photo_url:', insertResult.error.message);
-        const { firebase_uid: _firebaseUid, photo_url: _photoUrl, ...fallbackPayload } = createPayload;
-        createPayload = fallbackPayload;
-        insertResult = await insertUserProfile(createPayload);
+      if (createResult.error) {
+        return res.status(500).json({
+          code: 'SUPABASE_USER_INSERT_FAILED',
+          error: 'Failed to create user profile.',
+          details: createResult.error.message
+        });
       }
 
-      if (insertResult.error && /mobile_number|null/i.test(insertResult.error.message || '')) {
-        console.warn('[firebase-login] mobile_number appears required. Retrying create with generated placeholder:', insertResult.error.message);
-        createPayload = {
-          ...createPayload,
-          mobile_number: `9${String(Date.now()).slice(-9)}`
-        };
-        insertResult = await insertUserProfile(createPayload);
-      }
-
-      if (insertResult.error) {
-        console.error('[firebase-login] Supabase user insert error:', insertResult.error);
-        return res.status(500).json({ error: 'Failed to create user profile.' });
-      }
-
-      user = insertResult.data?.[0];
+      user = createResult.user;
     } else if (user.role !== role || user.name !== name || user.email_verified !== true) {
       const updatePayload = {
         name: user.name || name,
@@ -441,6 +507,7 @@ app.post('/api/auth/firebase-login', async (req, res) => {
       const { error: updateError } = await updateUserProfile(user.id, updatePayload);
 
       if (updateError) {
+        console.error('Supabase error:', updateError);
         console.error('[firebase-login] Supabase user update error:', updateError);
       } else {
         user = {
@@ -628,22 +695,81 @@ app.post('/api/auth/logout', async (req, res) => {
  */
 app.get('/api/auth/me', verifyToken, async (req, res) => {
   try {
-    const { data: users, error } = await supabase
-      .from('users')
-      .select('*')
-      .eq('id', req.user.id)
-      .limit(1);
+    const email = (req.user.email || '').trim().toLowerCase();
+    const role = ADMIN_EMAILS.includes(email) ? 'admin' : (req.user.role || 'user');
 
-    if (error) throw error;
+    let { user, error } = await findUserProfileById(req.user.id);
 
-    if (!users || users.length === 0) {
-      return res.status(404).json({ error: 'User profile not found.' });
+    if (error) {
+      return res.status(500).json({
+        code: 'SUPABASE_USER_SELECT_FAILED',
+        error: 'Could not load user profile from database.',
+        details: error.message
+      });
     }
 
-    return res.status(200).json(users[0]);
+    if (!user && email) {
+      const byEmail = await findUserProfileByEmail(email);
+
+      if (byEmail.error) {
+        return res.status(500).json({
+          code: 'SUPABASE_USER_SELECT_FAILED',
+          error: 'Could not load user profile by email.',
+          details: byEmail.error.message
+        });
+      }
+
+      user = byEmail.user;
+    }
+
+    if (!user && email) {
+      console.warn('[auth/me] Profile missing. Creating user profile from JWT claims:', {
+        id: req.user.id,
+        email,
+        role
+      });
+
+      const profilePayload = buildUserProfilePayload({
+        uid: null,
+        email,
+        name: req.user.name,
+        role,
+        mobileNumber: req.user.mobile_number
+      });
+      const createResult = await createUserProfile(profilePayload);
+
+      if (createResult.error) {
+        return res.status(500).json({
+          code: 'SUPABASE_USER_INSERT_FAILED',
+          error: 'User profile was missing and could not be recreated.',
+          details: createResult.error.message
+        });
+      }
+
+      user = createResult.user;
+    }
+
+    if (!user) {
+      console.error('[auth/me] User profile missing and JWT has no email:', req.user);
+      return res.status(404).json({
+        code: 'USER_PROFILE_NOT_FOUND',
+        error: 'User profile not found and cannot be recreated without email.'
+      });
+    }
+
+    const normalizedUser = {
+      ...user,
+      role
+    };
+
+    return res.status(200).json(normalizedUser);
   } catch (err) {
-    console.error('Error in auth/me:', err);
-    return res.status(500).json({ error: 'Failed to retrieve profile.' });
+    console.error('[auth/me] Unexpected error:', err);
+    return res.status(500).json({
+      code: 'AUTH_ME_FAILED',
+      error: 'Failed to retrieve profile.',
+      details: err.message
+    });
   }
 });
 

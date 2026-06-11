@@ -8,16 +8,20 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 -- 1. Users Table
 CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    firebase_uid VARCHAR(255) UNIQUE,
     name VARCHAR(255) NOT NULL,
     email VARCHAR(255) UNIQUE,
     email_verified BOOLEAN DEFAULT FALSE,
     mobile_number VARCHAR(15) UNIQUE,
     city VARCHAR(255) DEFAULT 'Not provided',
     role VARCHAR(50) DEFAULT 'user',
+    photo_url TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+ALTER TABLE users ADD COLUMN IF NOT EXISTS firebase_uid VARCHAR(255) UNIQUE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS photo_url TEXT;
 
 -- 2. Email OTP Verification Table
 CREATE TABLE IF NOT EXISTS email_otps (
@@ -96,6 +100,7 @@ CREATE TABLE IF NOT EXISTS reviews (
 
 -- Index optimization for queries
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_firebase_uid ON users(firebase_uid);
 CREATE INDEX IF NOT EXISTS idx_users_mobile ON users(mobile_number);
 CREATE INDEX IF NOT EXISTS idx_email_otps_email ON email_otps(email);
 CREATE INDEX IF NOT EXISTS idx_bookings_phone ON bookings(contact_phone);
