@@ -13,7 +13,7 @@ import GlassCard from '../components/shared/GlassCard';
 const contactInfo = [
   { icon: Phone, label: 'Phone', value: '+91 86880 74469', href: 'tel:+918688074469' },
   { icon: MessageCircle, label: 'WhatsApp', value: '+91 86880 74469', href: 'https://wa.me/918688074469' },
-  { icon: Mail, label: 'Email', value: 'info@mahathicontractors.in', href: 'mailto:info@mahathicontractors.in' },
+  { icon: Mail, label: 'Email', value: 'mahathicontractors@gmail.com', href: 'mailto:mahathicontractors@gmail.com' },
   { icon: MapPin, label: 'Location', value: 'Vijayawada, AP, India', href: null },
   { icon: Clock, label: 'Working Hours', value: 'Mon - Sat: 9AM - 8PM', href: null },
 ];

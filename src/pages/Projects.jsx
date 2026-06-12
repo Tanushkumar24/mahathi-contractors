@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { MapPin, Calendar, ArrowRight } from 'lucide-react';
 import SectionHeader from '../components/shared/SectionHeader';
+import api from '@/lib/api';
 
 const categories = ['All', 'Residential', 'Commercial', 'Interior', 'Villa', 'Renovation'];
 
@@ -19,10 +20,27 @@ const projects = [
 
 export default function Projects() {
   const [activeCategory, setActiveCategory] = useState('All');
+  const [cmsProjects, setCmsProjects] = useState([]);
+
+  useEffect(() => {
+    api.get('/api/projects')
+      .then(res => {
+        const normalized = (res.data || []).map(project => ({
+          ...project,
+          image: project.image_url || project.media_urls?.[0] || 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=600&q=80',
+          budget: project.budget || project.approx_price || 'Custom quote',
+          area: project.area || project.category || '',
+        }));
+        setCmsProjects(normalized);
+      })
+      .catch(() => setCmsProjects([]));
+  }, []);
+
+  const projectSource = cmsProjects.length ? cmsProjects : projects;
 
   const filtered = activeCategory === 'All'
-    ? projects
-    : projects.filter(p => p.category === activeCategory);
+    ? projectSource
+    : projectSource.filter(p => p.category === activeCategory);
 
   return (
     <div className="pt-24">

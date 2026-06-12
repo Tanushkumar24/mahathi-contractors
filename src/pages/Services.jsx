@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { Home, Paintbrush, Droplets, Zap, Sofa, Hammer, Grid3X3, Shield, ArrowRight, Ruler, Wrench } from 'lucide-react';
 import SectionHeader from '../components/shared/SectionHeader';
 import GlassCard from '../components/shared/GlassCard';
+import api from '@/lib/api';
 
 const categories = [
   'All', 'Construction', 'Design & Planning', 'Civil Works', 'Plumbing',
@@ -43,10 +44,30 @@ const allServices = [
 
 export default function Services() {
   const [activeCategory, setActiveCategory] = useState('All');
+  const [cmsServices, setCmsServices] = useState([]);
+
+  useEffect(() => {
+    api.get('/api/services')
+      .then(res => {
+        const normalized = (res.data || [])
+          .filter(service => service.active !== false && service.status !== 'inactive')
+          .map(service => ({
+            ...service,
+            isCms: true,
+            slug: service.slug || service.name?.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''),
+            icon: Home,
+            desc: service.description,
+          }));
+        setCmsServices(normalized);
+      })
+      .catch(() => setCmsServices([]));
+  }, []);
+
+  const serviceSource = cmsServices.length ? cmsServices : allServices;
 
   const filtered = activeCategory === 'All'
-    ? allServices
-    : allServices.filter(s => s.category === activeCategory);
+    ? serviceSource
+    : serviceSource.filter(s => s.category === activeCategory);
 
   return (
     <div className="pt-24">
@@ -80,7 +101,7 @@ export default function Services() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
             {filtered.map((service, i) => (
               <GlassCard key={service.name} delay={i * 0.03}>
-                <Link to={`/services/${service.slug}`} className="block group">
+                <Link to={service.isCms ? '/services' : `/services/${service.slug}`} className="block group">
                   <div className="flex items-start justify-between mb-4">
                     <div className="w-12 h-12 rounded-xl bg-blue-500/10 flex items-center justify-center group-hover:bg-blue-500/20 transition-colors">
                       <service.icon className="w-5 h-5 text-blue-400" />
@@ -88,7 +109,8 @@ export default function Services() {
                     <span className="text-xs text-blue-400/60 bg-blue-500/5 px-2 py-1 rounded-lg">{service.category}</span>
                   </div>
                   <h3 className="text-base font-semibold text-white mb-2 font-heading group-hover:text-blue-400 transition-colors">{service.name}</h3>
-                  <p className="text-sm text-white/40 leading-relaxed mb-4">{service.desc}</p>
+                  <p className="text-sm text-white/40 leading-relaxed mb-4">{service.desc || service.description}</p>
+                  {service.approx_price && <p className="mb-4 text-xs font-semibold text-amber-300">{service.approx_price}</p>}
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-white/30">Get free quote →</span>
                     <span className="text-xs text-blue-400 font-medium flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">

@@ -85,6 +85,13 @@ CREATE TABLE IF NOT EXISTS projects (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS media_urls JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS video_urls JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'completed';
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS category TEXT;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS location TEXT;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS image_url TEXT;
+
 -- 6. Services Table
 CREATE TABLE IF NOT EXISTS services (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -95,6 +102,12 @@ CREATE TABLE IF NOT EXISTS services (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+ALTER TABLE services ADD COLUMN IF NOT EXISTS image_url TEXT;
+ALTER TABLE services ADD COLUMN IF NOT EXISTS icon TEXT;
+ALTER TABLE services ADD COLUMN IF NOT EXISTS approx_price TEXT;
+ALTER TABLE services ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT TRUE;
+ALTER TABLE services ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'active';
+
 -- 7. Testimonials / Reviews Table
 CREATE TABLE IF NOT EXISTS reviews (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -104,6 +117,24 @@ CREATE TABLE IF NOT EXISTS reviews (
     service_category VARCHAR(255),
     location VARCHAR(255),
     is_featured BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+ALTER TABLE reviews ADD COLUMN IF NOT EXISTS rating INTEGER;
+ALTER TABLE reviews ADD COLUMN IF NOT EXISTS customer_name TEXT;
+ALTER TABLE reviews ADD COLUMN IF NOT EXISTS review_text TEXT;
+ALTER TABLE reviews ADD COLUMN IF NOT EXISTS photo_url TEXT;
+ALTER TABLE reviews ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT TRUE;
+
+-- 8. Media Gallery Table
+CREATE TABLE IF NOT EXISTS media (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title TEXT,
+    url TEXT NOT NULL,
+    public_id TEXT,
+    resource_type TEXT,
+    linked_type TEXT,
+    linked_id UUID,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -126,57 +157,94 @@ ALTER TABLE leads ENABLE ROW LEVEL SECURITY;
 ALTER TABLE projects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE services ENABLE ROW LEVEL SECURITY;
 ALTER TABLE reviews ENABLE ROW LEVEL SECURITY;
+ALTER TABLE media ENABLE ROW LEVEL SECURITY;
 
 -- Note: Since our backend connects via the service_role key, it will bypass these
 -- RLS policies. The policies below are configured to allow secure direct client
 -- reads or restricted operations if a client token is ever used directly.
 
 -- A. Users RLS Policies
+DROP POLICY IF EXISTS "Allow service role full access on users" ON users;
 CREATE POLICY "Allow service role full access on users" 
 ON users FOR ALL TO service_role USING (true) WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Allow public read-only of users profiles by matching id" ON users;
 CREATE POLICY "Allow public read-only of users profiles by matching id" 
 ON users FOR SELECT USING (true);
 
 -- B. Email OTP RLS Policies
+DROP POLICY IF EXISTS "Allow service role full access on email_otps" ON email_otps;
 CREATE POLICY "Allow service role full access on email_otps" 
 ON email_otps FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 -- C. Bookings RLS Policies
+DROP POLICY IF EXISTS "Allow service role full access on bookings" ON bookings;
 CREATE POLICY "Allow service role full access on bookings" 
 ON bookings FOR ALL TO service_role USING (true) WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Allow users to read their own bookings by contact_phone" ON bookings;
 CREATE POLICY "Allow users to read their own bookings by contact_phone" 
 ON bookings FOR SELECT TO authenticated 
 USING (contact_phone = (auth.jwt() ->> 'phone') OR created_by_id = auth.uid());
 
 -- D. Leads RLS Policies
+DROP POLICY IF EXISTS "Allow service role full access on leads" ON leads;
 CREATE POLICY "Allow service role full access on leads" 
 ON leads FOR ALL TO service_role USING (true) WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Allow public insertion of leads" ON leads;
 CREATE POLICY "Allow public insertion of leads" 
 ON leads FOR INSERT TO anon, authenticated WITH CHECK (true);
 
 -- E. Projects RLS Policies
+DROP POLICY IF EXISTS "Allow service role full access on projects" ON projects;
 CREATE POLICY "Allow service role full access on projects" 
 ON projects FOR ALL TO service_role USING (true) WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Allow public reading of projects" ON projects;
 CREATE POLICY "Allow public reading of projects" 
 ON projects FOR SELECT TO anon, authenticated USING (true);
 
 -- F. Services RLS Policies
+DROP POLICY IF EXISTS "Allow service role full access on services" ON services;
 CREATE POLICY "Allow service role full access on services" 
 ON services FOR ALL TO service_role USING (true) WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Allow public reading of services" ON services;
 CREATE POLICY "Allow public reading of services" 
 ON services FOR SELECT TO anon, authenticated USING (true);
 
 -- G. Reviews RLS Policies
+DROP POLICY IF EXISTS "Allow service role full access on reviews" ON reviews;
 CREATE POLICY "Allow service role full access on reviews" 
 ON reviews FOR ALL TO service_role USING (true) WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Allow public reading of reviews" ON reviews;
 CREATE POLICY "Allow public reading of reviews" 
 ON reviews FOR SELECT TO anon, authenticated USING (true);
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'media'
+      AND policyname = 'Allow service role full access on media'
+  ) THEN
+    CREATE POLICY "Allow service role full access on media"
+    ON media FOR ALL TO service_role USING (true) WITH CHECK (true);
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'media'
+      AND policyname = 'Allow public reading of media'
+  ) THEN
+    CREATE POLICY "Allow public reading of media"
+    ON media FOR SELECT TO anon, authenticated USING (true);
+  END IF;
+END $$;
 
 -- ============================================================================
 -- 7. Refresh Tokens Table & Policies
@@ -194,6 +262,7 @@ CREATE INDEX IF NOT EXISTS idx_refresh_tokens_token ON refresh_tokens(token);
 
 ALTER TABLE refresh_tokens ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Allow service role full access on refresh_tokens" ON refresh_tokens;
 CREATE POLICY "Allow service role full access on refresh_tokens" 
 ON refresh_tokens FOR ALL TO service_role USING (true) WITH CHECK (true);
 

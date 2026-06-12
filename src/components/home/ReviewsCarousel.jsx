@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Star, Quote } from 'lucide-react';
 import SectionHeader from '../shared/SectionHeader';
+import api from '@/lib/api';
 
 const reviews = [
   { name: 'Rajesh Kumar', rating: 5, comment: 'MBC built our dream villa in Hyderabad. The quality of work and professionalism exceeded expectations. Highly recommended!', service: 'Villa Construction', location: 'Hyderabad' },
@@ -13,6 +14,28 @@ const reviews = [
 ];
 
 export default function ReviewsCarousel() {
+  const [cmsReviews, setCmsReviews] = useState([]);
+
+  useEffect(() => {
+    api.get('/api/reviews')
+      .then(res => {
+        const normalized = (res.data || [])
+          .filter(review => review.active !== false)
+          .map(review => ({
+            name: review.name || review.customer_name,
+            rating: review.rating || 5,
+            comment: review.comment || review.review_text,
+            service: review.service_category,
+            location: review.location,
+            photo_url: review.photo_url,
+          }));
+        setCmsReviews(normalized);
+      })
+      .catch(() => setCmsReviews([]));
+  }, []);
+
+  const reviewSource = cmsReviews.length ? cmsReviews : reviews;
+
   return (
     <section className="py-24 relative overflow-hidden">
       <div className="absolute bottom-0 right-0 w-[500px] h-[500px] bg-blue-600/5 rounded-full blur-[150px] pointer-events-none" />
@@ -23,7 +46,7 @@ export default function ReviewsCarousel() {
           description="Real stories from homeowners who trusted us with their dream projects"
         />
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {reviews.map((review, i) => (
+          {reviewSource.map((review, i) => (
             <motion.div
               key={i}
               initial={{ opacity: 0, y: 30 }}

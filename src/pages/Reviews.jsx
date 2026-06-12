@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Star, Quote } from 'lucide-react';
 import SectionHeader from '../components/shared/SectionHeader';
 import AnimatedCounter from '../components/shared/AnimatedCounter';
 import { Users, Award, Heart } from 'lucide-react';
+import api from '@/lib/api';
 
 const reviews = [
   { name: 'Rajesh Kumar', rating: 5, comment: 'MBC built our dream villa in Hyderabad. The quality of work and professionalism exceeded expectations. From foundation to finishing, everything was top-notch. Highly recommended for anyone looking for premium construction!', service: 'Villa Construction', location: 'Jubilee Hills' },
@@ -18,6 +19,27 @@ const reviews = [
 ];
 
 export default function Reviews() {
+  const [cmsReviews, setCmsReviews] = useState([]);
+
+  useEffect(() => {
+    api.get('/api/reviews')
+      .then(res => {
+        const normalized = (res.data || [])
+          .filter(review => review.active !== false)
+          .map(review => ({
+            name: review.name || review.customer_name,
+            rating: review.rating || 5,
+            comment: review.comment || review.review_text,
+            service: review.service_category,
+            location: review.location,
+          }));
+        setCmsReviews(normalized);
+      })
+      .catch(() => setCmsReviews([]));
+  }, []);
+
+  const reviewSource = cmsReviews.length ? cmsReviews : reviews;
+
   return (
     <div className="pt-24">
       {/* Hero */}
@@ -55,7 +77,7 @@ export default function Reviews() {
 
           {/* Reviews Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {reviews.map((review, i) => (
+            {reviewSource.map((review, i) => (
               <motion.div
                 key={i}
                 initial={{ opacity: 0, y: 30 }}
@@ -73,7 +95,7 @@ export default function Reviews() {
                 <p className="text-sm text-white/60 leading-relaxed mb-6">"{review.comment}"</p>
                 <div className="flex items-center gap-3 pt-4 border-t border-white/5">
                   <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-white text-sm font-bold">
-                    {review.name.charAt(0)}
+                    {review.name?.charAt(0) || 'M'}
                   </div>
                   <div>
                     <p className="text-sm font-semibold text-white">{review.name}</p>

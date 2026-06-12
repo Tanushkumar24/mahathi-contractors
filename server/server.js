@@ -6,6 +6,9 @@ import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import nodemailer from 'nodemailer';
+import multer from 'multer';
+import { CloudinaryStorage } from 'multer-storage-cloudinary';
+import cloudinary from './cloudinary.js';
 import { supabase } from './supabase.js';
 import { getLatestQr, getWhatsAppStatus, logoutWhatsApp, restartWhatsAppClient, sendWhatsApp } from './whatsapp.js';
 import { verifyToken, verifyAdmin } from './authMiddleware.js';
@@ -26,6 +29,42 @@ const ADMIN_EMAILS = [
   'tanushkumar2006@gmail.com',
   'simhadri.tanushkumar@gmail.com'
 ];
+
+function ensureCloudinaryConfigured() {
+  if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
+    throw new Error('Cloudinary environment variables are missing.');
+  }
+}
+
+const cloudinaryStorage = new CloudinaryStorage({
+  cloudinary,
+  params: async (req, file) => {
+    ensureCloudinaryConfigured();
+    const isVideo = file.mimetype.startsWith('video/');
+    return {
+      folder: 'mahathi-contractors',
+      resource_type: isVideo ? 'video' : 'image',
+      allowed_formats: isVideo ? ['mp4', 'webm'] : ['jpg', 'jpeg', 'png', 'webp', 'gif', 'avif']
+    };
+  }
+});
+
+const upload = multer({
+  storage: cloudinaryStorage,
+  limits: { fileSize: 100 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/')) {
+      cb(null, true);
+      return;
+    }
+    cb(new Error('Only image and video uploads are allowed.'));
+  }
+});
+
+function getOptimizedCloudinaryUrl(url, resourceType) {
+  if (!url || resourceType === 'video') return url;
+  return url.replace('/upload/', '/upload/f_auto,q_auto/');
+}
 
 const smtpPort = Number(process.env.SMTP_PORT || 587);
 const mailTransporter = process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS
@@ -1096,6 +1135,82 @@ app.get('/api/projects', async (req, res) => {
   }
 });
 
+// ============================================================================
+// ADMIN MEDIA UPLOADS (Cloudinary)
+// ============================================================================
+
+app.post('/api/admin/upload', verifyToken, verifyAdmin, upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded.' });
+    }
+
+    const resourceType = req.file.mimetype?.startsWith('video/') ? 'video' : 'image';
+    const secureUrl = getOptimizedCloudinaryUrl(req.file.path, resourceType);
+    const publicId = req.file.filename;
+    const payload = {
+      title: req.body.title || req.file.originalname,
+      url: secureUrl,
+      public_id: publicId,
+      resource_type: resourceType,
+      linked_type: req.body.linked_type || null,
+      linked_id: req.body.linked_id || null
+    };
+
+    const { data, error } = await supabase.from('media').insert(payload).select();
+    if (error) {
+      console.error('[media] Failed to save upload metadata:', error);
+      return res.status(201).json({
+        secure_url: secureUrl,
+        public_id: publicId,
+        resource_type: resourceType,
+        warning: 'Uploaded to Cloudinary, but media metadata was not saved. Run the media table migration.'
+      });
+    }
+
+    return res.status(201).json({
+      ...data[0],
+      secure_url: secureUrl,
+      public_id: publicId,
+      resource_type: resourceType
+    });
+  } catch (err) {
+    console.error('[media] Upload failed:', err);
+    return res.status(500).json({ error: err.message || 'Upload failed.' });
+  }
+});
+
+app.get('/api/media', async (req, res) => {
+  try {
+    const { data, error } = await supabase.from('media').select('*').order('created_at', { ascending: false });
+    if (error) throw error;
+    return res.status(200).json(data);
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/admin/media/:id', verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const { data: existing, error: fetchError } = await supabase.from('media').select('*').eq('id', req.params.id).single();
+    if (fetchError) throw fetchError;
+
+    if (existing?.public_id) {
+      try {
+        await cloudinary.uploader.destroy(existing.public_id, { resource_type: existing.resource_type || 'image' });
+      } catch (cloudinaryError) {
+        console.error('[media] Cloudinary delete failed:', cloudinaryError);
+      }
+    }
+
+    const { error } = await supabase.from('media').delete().eq('id', req.params.id);
+    if (error) throw error;
+    return res.status(200).json({ message: 'Media deleted successfully.' });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/projects', verifyToken, verifyAdmin, async (req, res) => {
   try {
     const { data, error } = await supabase.from('projects').insert(req.body).select();
@@ -1191,6 +1306,17 @@ app.post('/api/reviews', verifyToken, verifyAdmin, async (req, res) => {
     const { data, error } = await supabase.from('reviews').insert(req.body).select();
     if (error) throw error;
     return res.status(201).json(data[0]);
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/reviews/:id', verifyToken, verifyAdmin, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const { data, error } = await supabase.from('reviews').update(req.body).eq('id', id).select();
+    if (error) throw error;
+    return res.status(200).json(data[0]);
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
