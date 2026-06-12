@@ -213,7 +213,8 @@ const mailTransporter = process.env.SMTP_USER && process.env.SMTP_PASS
   ? nodemailer.createTransport({
       host: smtpHost,
       port: smtpPort,
-      secure: smtpPort === 465,
+      secure: false,
+      requireTLS: true,
       connectionTimeout: 10000,
       greetingTimeout: 10000,
       socketTimeout: 10000,
@@ -223,6 +224,18 @@ const mailTransporter = process.env.SMTP_USER && process.env.SMTP_PASS
       }
     })
   : null;
+
+if (mailTransporter) {
+  console.log('[Email OTP] SMTP transporter created:', {
+    host: smtpHost,
+    port: smtpPort,
+    secure: false,
+    requireTLS: true,
+    user: process.env.SMTP_USER
+  });
+} else {
+  console.error('[Email OTP] SMTP transporter not created. SMTP_USER and SMTP_PASS are required.');
+}
 
 // Security: HTTP headers protection
 app.use(helmet());
@@ -364,6 +377,30 @@ function withTimeout(promise, ms, message) {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
+function formatEmailError(error) {
+  const parts = [
+    error?.message,
+    error?.response,
+    error?.code ? `code=${error.code}` : '',
+    error?.command ? `command=${error.command}` : '',
+    error?.responseCode ? `responseCode=${error.responseCode}` : ''
+  ].filter(Boolean);
+
+  return parts.length ? parts.join(' | ') : 'Failed to send OTP';
+}
+
+if (mailTransporter) {
+  console.log('[Email OTP] Startup SMTP verify started.');
+  withTimeout(mailTransporter.verify(), 10000, 'Startup SMTP verification timed out.')
+    .then(() => {
+      console.log('[Email OTP] Startup SMTP verify success.');
+    })
+    .catch((error) => {
+      console.error('[Email OTP] Startup SMTP verify failed:', error);
+      console.error('[Email OTP] If using Gmail, confirm SMTP_USER is the Gmail address and SMTP_PASS is a Gmail App Password.');
+    });
+}
+
 async function sendVerificationEmail(email, otp) {
   if (!mailTransporter) {
     console.error('[Email OTP] SMTP is not configured. Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM_NAME, and SMTP_FROM_EMAIL.');
@@ -382,9 +419,10 @@ async function sendVerificationEmail(email, otp) {
 
   try {
     console.log('[Email OTP] SMTP transporter verify started.');
-    await withTimeout(mailTransporter.verify(), 4000, 'SMTP verification timed out.');
-    console.log('[Email OTP] SMTP transporter verify success. sendMail started.');
-    const info = await withTimeout(mailTransporter.sendMail({
+    await withTimeout(mailTransporter.verify(), 5000, 'SMTP verify timeout');
+    console.log('[Email OTP] SMTP transporter verify success.');
+
+    const mailOptions = {
       from: `"${fromName}" <${fromEmail}>`,
       to: email,
       subject: 'Your Mahathi Contractors verification code',
@@ -396,11 +434,26 @@ async function sendVerificationEmail(email, otp) {
           <p>It is valid for 10 minutes.</p>
         </div>
       `
-    }), 6000, 'SMTP send timed out.');
+    };
+
+    console.log('[Email OTP] sendMail started.');
+    const sendMailPromise = mailTransporter.sendMail(mailOptions);
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('SMTP timeout')), 10000)
+    );
+    const info = await Promise.race([sendMailPromise, timeoutPromise]);
     console.log('[Email OTP] Send success:', { to: email, messageId: info.messageId, response: info.response });
   } catch (err) {
-    console.error('[Email OTP] Send failed:', err);
-    throw new Error('Failed to send OTP email');
+    const formattedError = formatEmailError(err);
+    console.error('[Email OTP] Send failed:', {
+      message: err?.message,
+      response: err?.response,
+      code: err?.code,
+      command: err?.command,
+      responseCode: err?.responseCode,
+      stack: err?.stack
+    });
+    throw new Error(formattedError);
   }
 }
 
@@ -554,11 +607,11 @@ async function createUserProfile(profile) {
 app.post('/api/auth/send-email-otp', async (req, res) => {
   const email = normalizeEmail(req.body.email);
   const name = req.body.name || email?.split('@')[0] || 'Customer';
-  console.log('[Email OTP] Route started:', {
+  console.log('[Email OTP] Route entered:', {
     email,
     name,
     smtpConfigured: Boolean(mailTransporter),
-    smtpHost: process.env.SMTP_HOST,
+    smtpHost,
     smtpPort
   });
 
@@ -580,7 +633,8 @@ app.post('/api/auth/send-email-otp', async (req, res) => {
 
     const otp = generateEmailOtp();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-    console.log('[Email OTP] OTP generated and inserting record:', { email, expiresAt });
+    console.log('[Email OTP] OTP generated:', { email, expiresAt });
+    console.log('[Email OTP] Inserting OTP record:', { email, expiresAt });
 
     const otpInsert = await withTimeout(
       supabase
@@ -611,11 +665,19 @@ app.post('/api/auth/send-email-otp', async (req, res) => {
       email,
       name
     });
-  } catch (err) {
-    console.error('Error sending email OTP:', err);
+  } catch (error) {
+    const formattedError = formatEmailError(error);
+    console.error('OTP email error:', {
+      message: error?.message,
+      response: error?.response,
+      code: error?.code,
+      command: error?.command,
+      responseCode: error?.responseCode,
+      stack: error?.stack
+    });
     return res.status(500).json({
-      error: err.message || 'Failed to send OTP email',
-      details: err.message
+      error: formattedError,
+      details: formattedError
     });
   }
 });

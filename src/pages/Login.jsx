@@ -95,7 +95,11 @@ export default function Login() {
       const user = await loginWithGoogle();
       finish(user);
     } catch (err) {
-      toast.error(err.message || "Google login failed. Please try again.");
+      if (err.code === "auth/popup-closed-by-user") {
+        toast.info("Google sign-in was closed before completion.");
+      } else {
+        toast.error(err.message || "Google login failed. Please try again.");
+      }
     } finally {
       setLoading("");
     }
