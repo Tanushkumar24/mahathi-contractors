@@ -24,6 +24,20 @@ function routeFor(user) {
 const cleanMobile = (value) => value.replace(/\D/g, "").slice(0, 10);
 const cleanOtp = (value) => value.replace(/\D/g, "").slice(0, 6);
 
+function getPasswordStrength(password) {
+  let score = 0;
+  if (password.length >= 8) score += 1;
+  if (/[A-Z]/.test(password)) score += 1;
+  if (/[a-z]/.test(password)) score += 1;
+  if (/\d/.test(password)) score += 1;
+  if (/[^A-Za-z0-9]/.test(password)) score += 1;
+
+  if (!password) return { label: '', color: 'bg-white/10', width: '0%' };
+  if (score <= 2) return { label: 'Weak password', color: 'bg-red-500', width: '33%' };
+  if (score <= 4) return { label: 'Medium password', color: 'bg-amber-400', width: '66%' };
+  return { label: 'Strong password', color: 'bg-green-500', width: '100%' };
+}
+
 export default function Login() {
   const navigate = useNavigate();
   const {
@@ -49,6 +63,7 @@ export default function Login() {
     confirmPassword: "",
     mobileNumber: "",
   });
+  const passwordStrength = getPasswordStrength(form.password);
 
   const update = (key, value) => {
     setNotice("");
@@ -274,6 +289,14 @@ export default function Login() {
             <div className="space-y-2">
               <Label htmlFor="createPassword">Password</Label>
               <Input id="createPassword" type="password" value={form.password} onChange={(e) => update("password", e.target.value)} required />
+              {form.password && (
+                <div className="space-y-1">
+                  <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
+                    <div className={`h-full rounded-full transition-all ${passwordStrength.color}`} style={{ width: passwordStrength.width }} />
+                  </div>
+                  <p className="text-xs text-muted-foreground">{passwordStrength.label}</p>
+                </div>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="confirmPassword">Confirm Password</Label>

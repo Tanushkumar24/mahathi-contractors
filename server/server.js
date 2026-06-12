@@ -207,23 +207,52 @@ function projectPayloadFromBody(body = {}) {
   };
 }
 
+const OPTIONAL_PROJECT_COLUMNS = [
+  'client_name',
+  'location',
+  'status',
+  'year',
+  'description',
+  'progress_percent',
+  'image_url',
+  'image_urls',
+  'media_urls',
+  'video_urls'
+];
+
+const getMissingProjectColumns = (error) => {
+  const message = error?.message || '';
+  const missingColumns = OPTIONAL_PROJECT_COLUMNS.filter((column) =>
+    new RegExp(`${column}|schema cache.*${column}|column .*${column}`, 'i').test(message)
+  );
+  const quotedColumn = message.match(/'([^']+)' column|column "([^"]+)"/i);
+  const parsedColumn = quotedColumn?.[1] || quotedColumn?.[2];
+  if (parsedColumn && OPTIONAL_PROJECT_COLUMNS.includes(parsedColumn) && !missingColumns.includes(parsedColumn)) {
+    missingColumns.push(parsedColumn);
+  }
+  return missingColumns;
+};
+
 const smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com';
 const smtpPort = Number(process.env.SMTP_PORT || 587);
 const smtpSecure = String(process.env.SMTP_SECURE || '').toLowerCase() === 'true' || smtpPort === 465;
+const createSmtpTransporter = ({ port = smtpPort, secure = smtpSecure } = {}) =>
+  nodemailer.createTransport({
+    host: smtpHost,
+    port,
+    secure,
+    requireTLS: !secure,
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 10000,
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS
+    }
+  });
+
 const mailTransporter = process.env.SMTP_USER && process.env.SMTP_PASS
-  ? nodemailer.createTransport({
-      host: smtpHost,
-      port: smtpPort,
-      secure: smtpSecure,
-      requireTLS: !smtpSecure,
-      connectionTimeout: 10000,
-      greetingTimeout: 10000,
-      socketTimeout: 10000,
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS
-      }
-    })
+  ? createSmtpTransporter()
   : null;
 
 if (mailTransporter) {
@@ -433,12 +462,26 @@ async function sendVerificationEmail(email, otp) {
       `
     };
 
-    console.log('[Email OTP] SMTP verify skipped for request. sendMail started.');
-    const sendMailPromise = mailTransporter.sendMail(mailOptions);
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('SMTP timeout')), 10000)
-    );
-    const info = await Promise.race([sendMailPromise, timeoutPromise]);
+    const sendWithTimeout = async (transporter, label) => {
+      console.log(`[Email OTP] ${label} sendMail started.`);
+      const sendMailPromise = transporter.sendMail(mailOptions);
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error(`${label} SMTP timeout`)), 10000)
+      );
+      return Promise.race([sendMailPromise, timeoutPromise]);
+    };
+
+    console.log('[Email OTP] SMTP verify skipped for request.');
+    let info;
+    try {
+      info = await sendWithTimeout(mailTransporter, `primary:${smtpPort}`);
+    } catch (primaryError) {
+      const shouldTryGmail465 = smtpHost === 'smtp.gmail.com' && smtpPort !== 465 && /timeout|ETIMEDOUT|ESOCKET/i.test(formatEmailError(primaryError));
+      if (!shouldTryGmail465) throw primaryError;
+      console.error('[Email OTP] Primary SMTP send failed, retrying Gmail port 465:', formatEmailError(primaryError));
+      const fallbackTransporter = createSmtpTransporter({ port: 465, secure: true });
+      info = await sendWithTimeout(fallbackTransporter, 'fallback:465');
+    }
     console.log('[Email OTP] Send success:', { to: email, messageId: info.messageId, response: info.response });
   } catch (err) {
     const formattedError = formatEmailError(err);
@@ -1491,12 +1534,15 @@ app.post('/api/projects', verifyToken, verifyAdmin, async (req, res) => {
     }
 
     console.log('[projects] Insert payload:', payload);
-    let { data, error } = await supabase.from('projects').insert(payload).select();
+    let insertPayload = { ...payload };
+    let { data, error } = await supabase.from('projects').insert(insertPayload).select();
 
-    if (error && /year/i.test(error.message || '')) {
-      console.warn('[projects] Retrying insert without year column:', error);
-      const { year: _year, ...fallbackPayload } = payload;
-      const fallback = await supabase.from('projects').insert(fallbackPayload).select();
+    for (let retries = 0; error && retries < OPTIONAL_PROJECT_COLUMNS.length; retries += 1) {
+      const missingColumns = getMissingProjectColumns(error);
+      if (missingColumns.length === 0) break;
+      console.warn('[projects] Optional columns missing. Retrying insert without:', missingColumns);
+      insertPayload = removePayloadKeys(insertPayload, missingColumns);
+      const fallback = await supabase.from('projects').insert(insertPayload).select();
       data = fallback.data;
       error = fallback.error;
     }
@@ -1524,12 +1570,15 @@ app.put('/api/projects/:id', verifyToken, verifyAdmin, async (req, res) => {
       body: req.body
     });
     const payload = projectPayloadFromBody(req.body);
-    let { data, error } = await supabase.from('projects').update(payload).eq('id', id).select();
+    let updatePayload = { ...payload };
+    let { data, error } = await supabase.from('projects').update(updatePayload).eq('id', id).select();
 
-    if (error && /year/i.test(error.message || '')) {
-      console.warn('[projects] Retrying update without year column:', error);
-      const { year: _year, ...fallbackPayload } = payload;
-      const fallback = await supabase.from('projects').update(fallbackPayload).eq('id', id).select();
+    for (let retries = 0; error && retries < OPTIONAL_PROJECT_COLUMNS.length; retries += 1) {
+      const missingColumns = getMissingProjectColumns(error);
+      if (missingColumns.length === 0) break;
+      console.warn('[projects] Optional columns missing. Retrying update without:', missingColumns);
+      updatePayload = removePayloadKeys(updatePayload, missingColumns);
+      const fallback = await supabase.from('projects').update(updatePayload).eq('id', id).select();
       data = fallback.data;
       error = fallback.error;
     }

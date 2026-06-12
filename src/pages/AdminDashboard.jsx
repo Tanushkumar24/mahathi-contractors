@@ -404,7 +404,7 @@ function ProjectsPage() {
       await loadProjects();
     } catch (err) {
       console.error('[Admin Projects] Save failed:', err.response?.data || err.message, err);
-      toast.error(err.response?.data?.error || err.response?.data?.details || 'Project save failed.');
+      toast.error(err.response?.data?.details || err.response?.data?.error || 'Project save failed.');
     } finally {
       setSavingProject(false);
     }
