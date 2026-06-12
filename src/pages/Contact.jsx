@@ -73,6 +73,15 @@ export default function Contact() {
                 </GlassCard>
               ))}
 
+              <GlassCard hover={false}>
+                <p className="text-xs uppercase tracking-[0.22em] text-amber-300">Company Profile</p>
+                <h3 className="mt-3 font-heading text-xl font-bold text-white">Simhadri Sampath Kumar</h3>
+                <p className="mt-1 text-sm font-semibold text-blue-300">Founder & Sole Proprietor</p>
+                <p className="mt-3 text-sm leading-6 text-white/45">
+                  20+ years of practical construction experience across civil works, residential projects, renovations, interiors, and reliable site execution.
+                </p>
+              </GlassCard>
+
               {/* Quick Actions */}
               <div className="pt-4 space-y-3">
                 <a href="https://wa.me/918688074469" target="_blank" rel="noopener noreferrer" className="block">

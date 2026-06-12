@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Compass, Home as HomeIcon, Wind, ShieldCheck } from 'lucide-react';
+import { Award, Compass, Home as HomeIcon, UserCheck, Wind, ShieldCheck } from 'lucide-react';
 import HeroSection from '../components/home/HeroSection';
 import StatsSection from '../components/home/StatsSection';
 import MarqueeBanner from '../components/home/MarqueeBanner';
@@ -21,6 +21,36 @@ export default function Home() {
     <div>
       <HeroSection />
       <StatsSection />
+      <section className="border-b border-white/5 bg-[#090D16] py-20">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="grid gap-8 lg:grid-cols-[1fr_1.2fr] lg:items-center">
+            <motion.div initial={{ opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5 }}>
+              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.28em] text-amber-300">Led by Experience</p>
+              <h2 className="font-heading text-3xl font-bold leading-tight text-white md:text-4xl">
+                Personal supervision from Simhadri Sampath Kumar
+              </h2>
+              <p className="mt-4 text-sm leading-7 text-white/50">
+                Mahathi Building Contractors is led by Simhadri Sampath Kumar, Founder & Sole Proprietor, with 20+ years of hands-on experience in civil works, residential construction, renovations, interiors, and site execution.
+              </p>
+            </motion.div>
+            <motion.div initial={{ opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.55 }} className="glass rounded-2xl p-6">
+              <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
+                <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-400 to-blue-600 font-heading text-2xl font-bold text-white">
+                  SS
+                </div>
+                <div>
+                  <h3 className="font-heading text-xl font-bold text-white">Simhadri Sampath Kumar</h3>
+                  <p className="mt-1 text-sm font-semibold text-amber-300">Founder & Sole Proprietor</p>
+                  <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                    <span className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/60"><Award className="h-3.5 w-3.5 text-amber-300" /> 20+ years experience</span>
+                    <span className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/60"><UserCheck className="h-3.5 w-3.5 text-blue-300" /> Direct project guidance</span>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        </div>
+      </section>
       <MarqueeBanner />
       <FeaturedServices />
       <section className="border-y border-white/5 bg-gradient-to-br from-[#0B1220] via-[#0E1726] to-[#101318] py-20">

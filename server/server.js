@@ -9,7 +9,6 @@ import nodemailer from 'nodemailer';
 import multer from 'multer';
 import cloudinary from './cloudinary.js';
 import { supabase } from './supabase.js';
-import { getLatestQr, getWhatsAppStatus, logoutWhatsApp, restartWhatsAppClient, sendWhatsApp } from './whatsapp.js';
 import { verifyToken, verifyAdmin } from './authMiddleware.js';
 import admin from './firebase-admin.js';
 
@@ -28,6 +27,86 @@ const ADMIN_EMAILS = [
   'tanushkumar2006@gmail.com',
   'simhadri.tanushkumar@gmail.com'
 ];
+
+const WHATSAPP_DISABLED_MESSAGE = 'WhatsApp Web automation is temporarily disabled. Opt-in values are saved for future notifications.';
+
+function getWhatsAppStatus() {
+  return {
+    connected: false,
+    initializing: false,
+    hasQr: false,
+    disabled: true,
+    lastError: WHATSAPP_DISABLED_MESSAGE
+  };
+}
+
+function getLatestQr() {
+  return '';
+}
+
+async function restartWhatsAppClient() {
+  console.log('[WhatsApp] Automation disabled. QR client will not start.');
+  return getWhatsAppStatus();
+}
+
+async function logoutWhatsApp() {
+  console.log('[WhatsApp] Automation disabled. No session to disconnect.');
+  return getWhatsAppStatus();
+}
+
+async function sendWhatsApp(phone, message) {
+  console.log(`[WhatsApp] Automation disabled. Message not sent to ${phone}.`);
+  return { skipped: true, disabled: true, message: WHATSAPP_DISABLED_MESSAGE };
+}
+
+const DEFAULT_SERVICES = [
+  { name: 'House Construction', category: 'Construction', description: 'Custom residential homes built with premium materials and modern techniques', icon: 'home', approx_price: 'Custom quote', active: true, status: 'active' },
+  { name: 'Duplex Construction', category: 'Construction', description: 'Elegant duplex homes with optimized space utilization and modern design', icon: 'home', approx_price: 'Custom quote', active: true, status: 'active' },
+  { name: 'Villa Construction', category: 'Construction', description: 'Luxury villas with premium amenities, architectural excellence, and durable execution', icon: 'home', approx_price: 'Custom quote', active: true, status: 'active' },
+  { name: 'Commercial Buildings', category: 'Construction', description: 'Commercial spaces designed for functionality, safety, and modern business use', icon: 'building', approx_price: 'Custom quote', active: true, status: 'active' },
+  { name: 'Interior Design', category: 'Design & Planning', description: 'Complete interior design with practical layouts, premium finishes, and expert execution', icon: 'ruler', approx_price: 'Custom quote', active: true, status: 'active' },
+  { name: 'Architecture Planning', category: 'Design & Planning', description: '2D/3D floor plans, elevation designs, structural planning, and site-ready drawings', icon: 'ruler', approx_price: 'Custom quote', active: true, status: 'active' },
+  { name: '3D Elevation', category: 'Design & Planning', description: 'Photorealistic elevation designs to visualize the home before construction starts', icon: 'ruler', approx_price: 'Custom quote', active: true, status: 'active' },
+  { name: 'Excavation & Foundation', category: 'Civil Works', description: 'Site marking, excavation, PCC, footings, foundation, and compaction work', icon: 'hammer', approx_price: 'Custom quote', active: true, status: 'active' },
+  { name: 'RCC & Slab Casting', category: 'Civil Works', description: 'Reinforced concrete work, shuttering, steel binding, slab casting, and curing', icon: 'hammer', approx_price: 'Custom quote', active: true, status: 'active' },
+  { name: 'Brick Work & Plastering', category: 'Civil Works', description: 'Professional masonry, internal plastering, external plastering, and smooth finishing', icon: 'hammer', approx_price: 'Custom quote', active: true, status: 'active' },
+  { name: 'Bathroom Plumbing', category: 'Plumbing', description: 'Complete bathroom plumbing with durable piping, fittings, drainage, and testing', icon: 'wrench', approx_price: 'Custom quote', active: true, status: 'active' },
+  { name: 'Kitchen Plumbing', category: 'Plumbing', description: 'Kitchen water supply, sink fitting, purifier points, drainage, and fixture installation', icon: 'wrench', approx_price: 'Custom quote', active: true, status: 'active' },
+  { name: 'Smart Wiring', category: 'Electrical', description: 'Safe home wiring, modular switches, DB setup, earthing, and automation-ready provision', icon: 'zap', approx_price: 'Custom quote', active: true, status: 'active' },
+  { name: 'Solar Installation', category: 'Electrical', description: 'Solar panel setup, inverter planning, mounting, wiring, and net-metering guidance', icon: 'zap', approx_price: 'Custom quote', active: true, status: 'active' },
+  { name: 'CCTV Installation', category: 'Electrical', description: 'Security camera installation with cabling, DVR/NVR setup, and mobile access support', icon: 'zap', approx_price: 'Custom quote', active: true, status: 'active' },
+  { name: 'Tile Flooring', category: 'Flooring', description: 'Premium tile flooring with surface preparation, leveling, laying, grouting, and finishing', icon: 'grid', approx_price: 'Custom quote', active: true, status: 'active' },
+  { name: 'Granite & Marble', category: 'Flooring', description: 'Granite and marble flooring, cutting, laying, polishing, and elegant stone finishing', icon: 'grid', approx_price: 'Custom quote', active: true, status: 'active' },
+  { name: 'Interior Painting', category: 'Painting', description: 'Professional interior painting with wall preparation, primer, putty, and premium paint coats', icon: 'paintbrush', approx_price: 'Custom quote', active: true, status: 'active' },
+  { name: 'Exterior Painting', category: 'Painting', description: 'Weather-resistant exterior painting with crack filling, primer, and long-lasting finish', icon: 'paintbrush', approx_price: 'Custom quote', active: true, status: 'active' },
+  { name: 'Texture Painting', category: 'Painting', description: 'Decorative texture painting, feature walls, patterns, glazing, and protective finishes', icon: 'paintbrush', approx_price: 'Custom quote', active: true, status: 'active' },
+  { name: 'Modular Kitchen', category: 'Interiors', description: 'Custom modular kitchens with smart storage, premium hardware, counters, and installation', icon: 'sofa', approx_price: 'Custom quote', active: true, status: 'active' },
+  { name: 'Wardrobes', category: 'Interiors', description: 'Built-in wardrobes, sliding shutters, lofts, drawers, and space-saving storage solutions', icon: 'sofa', approx_price: 'Custom quote', active: true, status: 'active' },
+  { name: 'False Ceiling', category: 'Interiors', description: 'Designer gypsum and POP false ceilings with lighting, profiles, and clean finishing', icon: 'sofa', approx_price: 'Custom quote', active: true, status: 'active' },
+  { name: 'Terrace Waterproofing', category: 'Waterproofing', description: 'Terrace leak protection with surface repair, primer, membrane coating, and testing', icon: 'droplets', approx_price: 'Custom quote', active: true, status: 'active' },
+  { name: 'Bathroom Waterproofing', category: 'Waterproofing', description: 'Bathroom waterproofing for wet areas, corners, joints, and tile-ready surfaces', icon: 'droplets', approx_price: 'Custom quote', active: true, status: 'active' },
+  { name: 'Smart Locks', category: 'Smart Home', description: 'Digital lock installation with fingerprint, PIN, card, and app-enabled access options', icon: 'shield', approx_price: 'Custom quote', active: true, status: 'active' },
+  { name: 'Home Theatre', category: 'Smart Home', description: 'Home theatre planning, display setup, surround sound, acoustic treatment, and calibration', icon: 'shield', approx_price: 'Custom quote', active: true, status: 'active' },
+  { name: 'EV Charger', category: 'Smart Home', description: 'Home EV charger installation with load assessment, dedicated wiring, safety, and testing', icon: 'shield', approx_price: 'Custom quote', active: true, status: 'active' },
+];
+
+async function getServicesWithDefaults() {
+  const { data: services, error } = await supabase
+    .from('services')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  if (services?.length) return services;
+
+  const { data: seeded, error: seedError } = await supabase
+    .from('services')
+    .insert(DEFAULT_SERVICES)
+    .select();
+
+  if (seedError) throw seedError;
+  return seeded || [];
+}
 
 function ensureCloudinaryConfigured() {
   if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
@@ -1263,10 +1342,10 @@ app.delete('/api/projects/:id', verifyToken, verifyAdmin, async (req, res) => {
 
 app.get('/api/services', async (req, res) => {
   try {
-    const { data: services, error } = await supabase.from('services').select('*').order('created_at', { ascending: false });
-    if (error) throw error;
+    const services = await getServicesWithDefaults();
     return res.status(200).json(services);
   } catch (err) {
+    console.error('Error loading services:', err);
     return res.status(500).json({ error: err.message });
   }
 });

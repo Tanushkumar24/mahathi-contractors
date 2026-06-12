@@ -14,11 +14,12 @@ const values = [
 
 const milestones = [
   { year: '2020', title: 'Founded', desc: 'Mahathi Building Contractors was established in Vijayawada with a vision to deliver trusted, high-quality, and modern construction services.' },
-  { year: '2020', title: '20+ Years Experience', desc: 'Our founder brings over 20 years of hands-on experience in construction, civil works, renovations, interiors, and project management.' },
-  { year: '2021', title: 'Residential Projects', desc: 'Successfully completed multiple residential construction and renovation projects across Vijayawada and nearby areas.' },
-  { year: '2022', title: 'Interior & Maintenance Services', desc: 'Expanded services into interiors, painting, electrical, plumbing, waterproofing, and complete home maintenance solutions.' },
-  { year: '2023', title: 'Modern Construction Solutions', desc: 'Introduced modern design approaches, premium finishing standards, smart planning, and customer-focused execution.' },
-  { year: '2024', title: '150+ Completed Services', desc: 'Successfully completed 150+ construction, renovation, and maintenance services with strong customer satisfaction and a trusted local reputation.' },
+  { year: '2021', title: 'Residential Projects', desc: 'Started serving families with residential construction, renovation, and civil works across Vijayawada and nearby areas.' },
+  { year: '2022', title: 'Interior & Maintenance Services', desc: 'Expanded into interior works, painting, electrical, plumbing, waterproofing, and complete home maintenance services.' },
+  { year: '2023', title: 'Modern Construction Solutions', desc: 'Strengthened project planning, premium finishing, practical layouts, and customer-focused execution.' },
+  { year: '2024', title: 'Trusted Local Growth', desc: 'Built a stronger local reputation through residential projects, renovation works, and maintenance services.' },
+  { year: '2025', title: '150+ Completed Services', desc: 'Reached 150+ completed construction, renovation, and maintenance services with strong customer satisfaction.' },
+  { year: '2026', title: 'Premium Construction Vision', desc: 'Continuing to grow as a trusted construction partner with modern design, vastu-friendly planning, transparent pricing, and on-time execution.' },
 ];
 
 const team = [
@@ -79,6 +80,38 @@ export default function About() {
                 <p className="text-sm text-white/40 leading-relaxed">{v.desc}</p>
               </GlassCard>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Founder */}
+      <section className="py-24 border-t border-white/5">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
+            <motion.div initial={{ opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5 }}>
+              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.28em] text-amber-300">Led by Experience</p>
+              <h2 className="font-heading text-3xl font-bold text-white md:text-4xl">Founder & Sole Proprietor</h2>
+              <p className="mt-4 text-sm leading-7 text-white/50">
+                Mahathi Building Contractors is led by Simhadri Sampath Kumar, Founder & Sole Proprietor, who brings over 20 years of practical construction experience in civil works, residential projects, renovations, interiors, and site execution. His focus is on quality workmanship, transparent communication, and reliable project completion.
+              </p>
+            </motion.div>
+            <GlassCard hover={false}>
+              <div className="flex flex-col gap-6 sm:flex-row sm:items-center">
+                <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-400 to-blue-600 text-3xl font-bold text-white shadow-2xl shadow-blue-950/40">
+                  SS
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.22em] text-blue-300">Founder Profile</p>
+                  <h3 className="mt-2 font-heading text-2xl font-bold text-white">Simhadri Sampath Kumar</h3>
+                  <p className="mt-1 text-sm font-semibold text-amber-300">Founder & Sole Proprietor</p>
+                  <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                    {['20+ years experience', 'Civil works expertise', 'Reliable site execution'].map((item) => (
+                      <span key={item} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/60">{item}</span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </GlassCard>
           </div>
         </div>
       </section>

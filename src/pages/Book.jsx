@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Calendar, MapPin, FileText, Check, ArrowRight, ArrowLeft, ChevronRight, Navigation, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -10,9 +11,13 @@ import { toast } from 'sonner';
 import { addDays, format } from 'date-fns';
 
 const services = [
-  'House Construction', 'Commercial Construction', 'Renovation', 'Interior Design',
-  'Painting', 'Waterproofing', 'Electrical Works', 'Plumbing',
-  'Flooring', 'Modular Kitchen', 'False Ceiling', 'Maintenance',
+  'House Construction', 'Duplex Construction', 'Villa Construction', 'Commercial Buildings',
+  'Interior Design', 'Architecture Planning', '3D Elevation', 'Excavation & Foundation',
+  'RCC & Slab Casting', 'Brick Work & Plastering', 'Bathroom Plumbing', 'Kitchen Plumbing',
+  'Smart Wiring', 'Solar Installation', 'CCTV Installation', 'Tile Flooring', 'Granite & Marble',
+  'Interior Painting', 'Exterior Painting', 'Texture Painting', 'Modular Kitchen', 'Wardrobes',
+  'False Ceiling', 'Terrace Waterproofing', 'Bathroom Waterproofing', 'Smart Locks',
+  'Home Theatre', 'EV Charger', 'Maintenance',
 ];
 
 const timeSlots = {
@@ -83,9 +88,12 @@ const isUpcomingSlot = (dateStr, slot) => {
 
 export default function Book() {
   const { user } = useAuth();
-  const [step, setStep] = useState(0);
+  const [searchParams] = useSearchParams();
+  const requestedService = searchParams.get('service')?.trim() || '';
+  const [serviceLocked, setServiceLocked] = useState(Boolean(requestedService));
+  const [step, setStep] = useState(requestedService ? 1 : 0);
   const [booking, setBooking] = useState({
-    service_name: '',
+    service_name: requestedService,
     date: '',
     time_slot: '',
     contact_name: '',
@@ -104,6 +112,13 @@ export default function Book() {
   const [addressSuggestions, setAddressSuggestions] = useState([]);
   const [addressSearchStatus, setAddressSearchStatus] = useState('idle');
   const [selectedAddressValue, setSelectedAddressValue] = useState('');
+
+  useEffect(() => {
+    if (!requestedService) return;
+    setBooking((prev) => ({ ...prev, service_name: prev.service_name || requestedService }));
+    setServiceLocked(true);
+    setStep((prev) => (prev === 0 ? 1 : prev));
+  }, [requestedService]);
 
   useEffect(() => {
     if (user) {
@@ -317,6 +332,26 @@ export default function Book() {
               </React.Fragment>
             ))}
           </div>
+
+          {serviceLocked && booking.service_name && step > 0 && step < 4 && (
+            <div className="mb-6 flex flex-col gap-3 rounded-2xl border border-amber-400/20 bg-amber-400/10 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-[0.22em] text-amber-200/70">Selected Service</p>
+                <p className="mt-1 font-heading text-lg font-semibold text-white">{booking.service_name}</p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setServiceLocked(false);
+                  setStep(0);
+                }}
+                className="rounded-xl border-white/10 text-white/70 hover:bg-white/5 hover:text-white"
+              >
+                Change Service
+              </Button>
+            </div>
+          )}
 
           <AnimatePresence mode="wait">
             {step === 0 && (
