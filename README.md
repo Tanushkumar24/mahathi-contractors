@@ -99,18 +99,19 @@ DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE
 # JWT
 JWT_SECRET=your_jwt_secret
 
-# Email OTP SMTP
+# Email OTP
+# Recommended on Railway: use an HTTPS email provider because SMTP ports may time out.
+RESEND_API_KEY=your_resend_api_key
+# or
+BREVO_API_KEY=your_brevo_api_key
+SMTP_FROM_NAME=Mahathi Contractors
+SMTP_FROM_EMAIL=no-reply@mahathicontractors.in
+
+# Optional SMTP fallback
 SMTP_HOST=smtp.example.com
 SMTP_PORT=587
 SMTP_USER=no-reply@mahathicontractors.in
 SMTP_PASS=your_smtp_password
-SMTP_FROM_NAME=Mahathi Contractors
-SMTP_FROM_EMAIL=no-reply@mahathicontractors.in
-
-# WhatsApp/Twilio
-TWILIO_ACCOUNT_SID=your_account_sid
-TWILIO_AUTH_TOKEN=your_auth_token
-TWILIO_WHATSAPP_NUMBER=whatsapp:+1234567890
 
 # Admin contacts (comma-separated)
 ADMIN_WHATSAPP_NUMBERS=+918688074469,+919398158902

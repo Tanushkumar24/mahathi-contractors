@@ -237,6 +237,8 @@ const smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com';
 const smtpPort = Number(process.env.SMTP_PORT || 587);
 const smtpSecure = String(process.env.SMTP_SECURE || '').toLowerCase() === 'true' || smtpPort === 465;
 let smtpStartupError = null;
+const hasResendConfig = Boolean(process.env.RESEND_API_KEY);
+const hasBrevoConfig = Boolean(process.env.BREVO_API_KEY);
 
 const createSmtpTransporter = ({ port = smtpPort, secure = smtpSecure, timeoutMs = 6000 } = {}) =>
   nodemailer.createTransport({
@@ -254,6 +256,15 @@ const createSmtpTransporter = ({ port = smtpPort, secure = smtpSecure, timeoutMs
   });
 
 const isSmtpConfigured = Boolean(process.env.SMTP_USER && process.env.SMTP_PASS);
+const isEmailConfigured = Boolean(isSmtpConfigured || hasResendConfig || hasBrevoConfig);
+
+if (hasResendConfig) {
+  console.log('[Email OTP] Resend API configured. OTP emails will prefer HTTPS delivery.');
+}
+
+if (hasBrevoConfig) {
+  console.log('[Email OTP] Brevo API configured. OTP emails can use HTTPS delivery.');
+}
 
 if (isSmtpConfigured) {
   console.log('[Email OTP] SMTP transporter created:', {
@@ -411,6 +422,7 @@ function formatEmailError(error) {
   const parts = [
     error?.message,
     error?.response,
+    error?.details,
     error?.code ? `code=${error.code}` : '',
     error?.command ? `command=${error.command}` : '',
     error?.responseCode ? `responseCode=${error.responseCode}` : ''
@@ -437,16 +449,94 @@ if (isSmtpConfigured) {
     });
 }
 
+async function readProviderError(response) {
+  const text = await response.text().catch(() => '');
+  if (!text) return `${response.status} ${response.statusText}`;
+
+  try {
+    const parsed = JSON.parse(text);
+    return parsed.message || parsed.error || parsed.errors?.[0]?.message || text;
+  } catch {
+    return text;
+  }
+}
+
+async function sendEmailViaResend({ email, subject, text, html, fromName, fromEmail }) {
+  console.log('[Email OTP] Resend send started:', { to: email, fromEmail });
+  const response = await withTimeout(
+    fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        from: `${fromName} <${fromEmail}>`,
+        to: [email],
+        subject,
+        text,
+        html
+      })
+    }),
+    8000,
+    'Resend API timeout'
+  );
+
+  if (!response.ok) {
+    const details = await readProviderError(response);
+    throw new Error(`Resend API failed: ${details}`);
+  }
+
+  const data = await response.json().catch(() => ({}));
+  console.log('[Email OTP] Resend send success:', { to: email, id: data.id });
+  return data;
+}
+
+async function sendEmailViaBrevo({ email, subject, text, html, fromName, fromEmail }) {
+  console.log('[Email OTP] Brevo send started:', { to: email, fromEmail });
+  const response = await withTimeout(
+    fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+        'api-key': process.env.BREVO_API_KEY,
+        'Content-Type': 'application/json',
+        Accept: 'application/json'
+      },
+      body: JSON.stringify({
+        sender: { name: fromName, email: fromEmail },
+        to: [{ email }],
+        subject,
+        textContent: text,
+        htmlContent: html
+      })
+    }),
+    8000,
+    'Brevo API timeout'
+  );
+
+  if (!response.ok) {
+    const details = await readProviderError(response);
+    throw new Error(`Brevo API failed: ${details}`);
+  }
+
+  const data = await response.json().catch(() => ({}));
+  console.log('[Email OTP] Brevo send success:', { to: email, messageId: data.messageId });
+  return data;
+}
+
 async function sendVerificationEmail(email, otp) {
-  if (!isSmtpConfigured) {
-    console.error('[Email OTP] SMTP is not configured. Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM_NAME, and SMTP_FROM_EMAIL.');
+  if (!isEmailConfigured) {
+    console.error('[Email OTP] Email service is not configured. Set RESEND_API_KEY or BREVO_API_KEY, or SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS.');
     throw new Error('Email service is not configured.');
   }
 
   const fromName = process.env.SMTP_FROM_NAME || 'Mahathi Contractors';
-  const fromEmail = process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER;
+  const fromEmail = process.env.SMTP_FROM_EMAIL || process.env.RESEND_FROM_EMAIL || process.env.BREVO_FROM_EMAIL || process.env.SMTP_USER;
   console.log('[Email OTP] Send start:', {
     to: email,
+    resendConfigured: hasResendConfig,
+    brevoConfigured: hasBrevoConfig,
+    smtpConfigured: isSmtpConfigured,
     host: smtpHost,
     port: smtpPort,
     fromEmail,
@@ -454,18 +544,34 @@ async function sendVerificationEmail(email, otp) {
   });
 
   try {
-    const mailOptions = {
-      from: `"${fromName}" <${fromEmail}>`,
-      to: email,
-      subject: 'Your Mahathi Contractors verification code',
-      text: `Your verification code is ${otp}. It is valid for 10 minutes.`,
-      html: `
+    const subject = 'Your Mahathi Contractors verification code';
+    const text = `Your verification code is ${otp}. It is valid for 10 minutes.`;
+    const html = `
         <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; color: #111827;">
           <h2 style="margin-bottom: 8px;">Mahathi Contractors</h2>
           <p>Your verification code is <strong style="font-size: 24px; letter-spacing: 4px;">${otp}</strong>.</p>
           <p>It is valid for 10 minutes.</p>
         </div>
-      `
+      `;
+
+    const emailPayload = { email, subject, text, html, fromName, fromEmail };
+
+    if (hasResendConfig) {
+      await sendEmailViaResend(emailPayload);
+      return;
+    }
+
+    if (hasBrevoConfig) {
+      await sendEmailViaBrevo(emailPayload);
+      return;
+    }
+
+    const mailOptions = {
+      from: `"${fromName}" <${fromEmail}>`,
+      to: email,
+      subject,
+      text,
+      html
     };
 
     const sendWithTimeout = async ({ port, secure, label, timeoutMs = 4000 }) => {
