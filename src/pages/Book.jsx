@@ -29,6 +29,35 @@ const steps = [
 ];
 
 const cleanMobile = (value) => value.replace(/\D/g, '').slice(0, 10);
+const VIJAYAWADA_VIEWBOX = '80.45,16.65,80.85,16.35';
+const LOCAL_CONTEXT_REGEX = /\b(vijayawada|andhra\s*pradesh|ap|india)\b/i;
+
+const withLocalAddressContext = (query) => {
+  const trimmed = query.trim();
+  return LOCAL_CONTEXT_REGEX.test(trimmed)
+    ? trimmed
+    : `${trimmed}, Vijayawada, Andhra Pradesh, India`;
+};
+
+const getAddressParts = (suggestion) => {
+  const address = suggestion.address || {};
+  const place = suggestion.name || suggestion.display_name?.split(',')?.[0] || 'Address result';
+  const area = address.suburb || address.neighbourhood || address.quarter || address.road || address.hamlet || address.village || address.town || '';
+  const city = address.city || address.town || address.village || address.county || 'Vijayawada';
+  const state = address.state || 'Andhra Pradesh';
+
+  return { place, area, city, state };
+};
+
+const scoreLocalResult = (suggestion) => {
+  const address = suggestion.address || {};
+  const text = `${suggestion.display_name || ''} ${address.city || ''} ${address.town || ''} ${address.state || ''}`.toLowerCase();
+  let score = 0;
+  if (text.includes('vijayawada')) score += 3;
+  if (text.includes('andhra pradesh')) score += 2;
+  if (text.includes('india')) score += 1;
+  return score;
+};
 
 export default function Book() {
   const { user } = useAuth();
@@ -64,7 +93,9 @@ export default function Book() {
   const dates = Array.from({ length: 14 }, (_, i) => addDays(new Date(), i + 1));
 
   useEffect(() => {
-    if (!booking.address || booking.address.trim().length < 4) {
+    const addressQuery = booking.address.trim();
+
+    if (addressQuery.length < 3) {
       setAddressSuggestions([]);
       return;
     }
@@ -73,18 +104,22 @@ export default function Book() {
       try {
         setAddressLoading(true);
         const params = new URLSearchParams({
-          q: booking.address,
+          q: withLocalAddressContext(addressQuery),
           format: 'json',
           addressdetails: '1',
           limit: '5',
-          countrycodes: 'in'
+          countrycodes: 'in',
+          viewbox: VIJAYAWADA_VIEWBOX,
+          bounded: '0',
+          'accept-language': 'en'
         });
         const res = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
           headers: { Accept: 'application/json' }
         });
         if (!res.ok) throw new Error('Address search failed');
         const data = await res.json();
-        setAddressSuggestions(data || []);
+        const prioritized = [...(data || [])].sort((a, b) => scoreLocalResult(b) - scoreLocalResult(a));
+        setAddressSuggestions(prioritized);
       } catch (err) {
         console.warn('Address autocomplete failed:', err);
         setAddressSuggestions([]);
@@ -120,7 +155,9 @@ export default function Book() {
       lat: String(latitude),
       lon: String(longitude),
       format: 'json',
-      addressdetails: '1'
+      addressdetails: '1',
+      zoom: '18',
+      'accept-language': 'en'
     });
     const res = await fetch(`https://nominatim.openstreetmap.org/reverse?${params.toString()}`, {
       headers: { Accept: 'application/json' }
@@ -134,6 +171,11 @@ export default function Book() {
     if (!navigator.geolocation) {
       toast.error('Location is not supported in this browser. Please type your address manually.');
       return;
+    }
+
+    if (booking.address.trim() && (!booking.latitude || !booking.longitude)) {
+      const replaceAddress = window.confirm('Use current location and replace the typed address?');
+      if (!replaceAddress) return;
     }
 
     setLocating(true);
@@ -319,19 +361,26 @@ export default function Book() {
                     </Button>
                     <div className="relative">
                       <Textarea placeholder="Address / City *" value={booking.address} onChange={(e) => updateAddress(e.target.value)} className="min-h-[90px] rounded-xl border-white/10 bg-white/5 text-white placeholder:text-white/30" />
+                      <p className="mt-2 text-xs text-white/35">Select the closest address from suggestions or type manually.</p>
                       {(addressLoading || addressSuggestions.length > 0) && (
                         <div className="absolute left-0 right-0 top-full z-20 mt-2 max-h-56 overflow-y-auto rounded-xl border border-white/10 bg-[#0A0E1A] shadow-xl">
                           {addressLoading && <div className="px-4 py-3 text-xs text-white/40">Searching address...</div>}
-                          {!addressLoading && addressSuggestions.map((suggestion) => (
-                            <button
-                              key={suggestion.place_id}
-                              type="button"
-                              onClick={() => selectAddressSuggestion(suggestion)}
-                              className="block w-full border-b border-white/5 px-4 py-3 text-left text-xs text-white/65 transition hover:bg-white/5 hover:text-white last:border-0"
-                            >
-                              {suggestion.display_name}
-                            </button>
-                          ))}
+                          {!addressLoading && addressSuggestions.map((suggestion) => {
+                            const { place, area, city, state } = getAddressParts(suggestion);
+                            const locationLine = [area, city, state].filter(Boolean).join(' - ');
+
+                            return (
+                              <button
+                                key={suggestion.place_id}
+                                type="button"
+                                onClick={() => selectAddressSuggestion(suggestion)}
+                                className="block w-full border-b border-white/5 px-4 py-3 text-left transition hover:bg-white/5 last:border-0"
+                              >
+                                <span className="block text-sm font-semibold text-white/80">{place}</span>
+                                <span className="mt-1 block text-xs text-white/45">{locationLine}</span>
+                              </button>
+                            );
+                          })}
                         </div>
                       )}
                     </div>
