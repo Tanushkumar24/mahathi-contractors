@@ -10,7 +10,6 @@ const baseLinks = [
   { label: 'About', path: '/about' },
   { label: 'Services', path: '/services' },
   { label: 'Projects', path: '/projects' },
-  { label: 'Gallery', path: '/gallery' },
   { label: 'Reviews', path: '/reviews' },
   { label: 'Contact', path: '/contact' },
 ];

@@ -1307,6 +1307,21 @@ app.delete('/api/services/:id', verifyToken, verifyAdmin, async (req, res) => {
 
 app.get('/api/reviews', async (req, res) => {
   try {
+    const { data: reviews, error } = await supabase
+      .from('reviews')
+      .select('*')
+      .eq('status', 'approved')
+      .neq('active', false)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return res.status(200).json(reviews);
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/admin/reviews', verifyToken, verifyAdmin, async (req, res) => {
+  try {
     const { data: reviews, error } = await supabase.from('reviews').select('*').order('created_at', { ascending: false });
     if (error) throw error;
     return res.status(200).json(reviews);
@@ -1315,7 +1330,42 @@ app.get('/api/reviews', async (req, res) => {
   }
 });
 
-app.post('/api/reviews', verifyToken, verifyAdmin, async (req, res) => {
+app.post('/api/reviews', upload.single('photo'), async (req, res) => {
+  try {
+    const { name, customer_name, rating, review_text, comment, service_category, location } = req.body;
+    if (!(name || customer_name) || !(review_text || comment) || !rating) {
+      return res.status(400).json({ error: 'Name, rating, and review message are required.' });
+    }
+
+    let photoUrl = null;
+    if (req.file) {
+      const result = await uploadToCloudinary(req.file);
+      photoUrl = getOptimizedCloudinaryUrl(result.secure_url, result.resource_type);
+    }
+
+    const payload = {
+      name: name || customer_name,
+      customer_name: customer_name || name,
+      rating: Number(rating),
+      comment: comment || review_text,
+      review_text: review_text || comment,
+      service_category: service_category || null,
+      location: location || null,
+      photo_url: photoUrl,
+      status: 'pending',
+      active: true,
+      is_featured: false
+    };
+
+    const { data, error } = await supabase.from('reviews').insert(payload).select();
+    if (error) throw error;
+    return res.status(201).json(data[0]);
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/admin/reviews', verifyToken, verifyAdmin, async (req, res) => {
   try {
     const { data, error } = await supabase.from('reviews').insert(req.body).select();
     if (error) throw error;

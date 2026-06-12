@@ -5,6 +5,7 @@ import { Home, Paintbrush, Droplets, Zap, Sofa, Hammer, Grid3X3, Shield, ArrowRi
 import SectionHeader from '../components/shared/SectionHeader';
 import GlassCard from '../components/shared/GlassCard';
 import api from '@/lib/api';
+import { buildServiceLocationPath, seoLocations, seoServices } from '@/lib/seoData';
 
 const categories = [
   'All', 'Construction', 'Design & Planning', 'Civil Works', 'Plumbing',
@@ -68,6 +69,8 @@ export default function Services() {
   const filtered = activeCategory === 'All'
     ? serviceSource
     : serviceSource.filter(s => s.category === activeCategory);
+  const priorityLocations = seoLocations.slice(0, 9);
+  const priorityServices = seoServices.slice(0, 6);
 
   return (
     <div className="pt-24">
@@ -120,6 +123,26 @@ export default function Services() {
                 </Link>
               </GlassCard>
             ))}
+          </div>
+
+          <div className="mt-16 glass rounded-2xl p-6 md:p-8">
+            <h2 className="font-heading text-2xl font-bold text-white">Construction services by location</h2>
+            <p className="mt-3 max-w-3xl text-sm leading-7 text-white/45">
+              Explore local service pages for Vijayawada and nearby Andhra Pradesh regions. Each page explains the relevant service, local coverage, FAQs, and booking options.
+            </p>
+            <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {priorityLocations.flatMap((location) =>
+                priorityServices.slice(0, 2).map((service) => (
+                  <Link
+                    key={`${service.slug}-${location.slug}`}
+                    to={buildServiceLocationPath(service.slug, location.slug)}
+                    className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/60 transition hover:border-blue-400/30 hover:text-white"
+                  >
+                    {service.label} in {location.name}
+                  </Link>
+                ))
+              )}
+            </div>
           </div>
         </div>
       </section>

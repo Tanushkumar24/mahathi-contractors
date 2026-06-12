@@ -1,109 +1,130 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Star, Quote } from 'lucide-react';
+import { Quote, Send, Star } from 'lucide-react';
+import { toast } from 'sonner';
 import SectionHeader from '../components/shared/SectionHeader';
-import AnimatedCounter from '../components/shared/AnimatedCounter';
-import { Users, Award, Heart } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import api from '@/lib/api';
 
-const reviews = [
-  { name: 'Rajesh Kumar', rating: 5, comment: 'MBC built our dream villa in Hyderabad. The quality of work and professionalism exceeded expectations. From foundation to finishing, everything was top-notch. Highly recommended for anyone looking for premium construction!', service: 'Villa Construction', location: 'Jubilee Hills' },
-  { name: 'Priya Sharma', rating: 5, comment: 'Amazing interior design work. They transformed our 3BHK into a modern, luxurious living space. The modular kitchen and wardrobes are stunning. Every detail was meticulously planned and executed.', service: 'Interior Design', location: 'Gachibowli' },
-  { name: 'Venkat Rao', rating: 5, comment: 'The waterproofing team solved our terrace leakage problem permanently. Its been 2 years and absolutely no issues. Great service with warranty support!', service: 'Waterproofing', location: 'Kukatpally' },
-  { name: 'Lakshmi Devi', rating: 5, comment: 'Got our entire home painted by MBC. The finish quality is outstanding — smooth, even, and premium paints were used. Clean work, on-time delivery, and great communication throughout.', service: 'Painting', location: 'Kondapur' },
-  { name: 'Suresh Reddy', rating: 5, comment: 'Complete house construction from scratch. MBC handled everything from architectural design to handover. The project was delivered on time and within budget. Truly a 10/10 experience!', service: 'House Construction', location: 'Miyapur' },
-  { name: 'Anitha Rao', rating: 5, comment: 'Modular kitchen installation was flawless. Modern design with soft-close drawers, premium hardware, and installed within the promised timeline. Love how it turned out!', service: 'Modular Kitchen', location: 'Banjara Hills' },
-  { name: 'Mohammed Ismail', rating: 5, comment: 'Smart home installation including CCTV, smart locks, and automated lighting. The team was knowledgeable and the setup works perfectly. Very futuristic feel!', service: 'Smart Home', location: 'HITEC City' },
-  { name: 'Kavitha Reddy', rating: 5, comment: 'False ceiling with beautiful ambient lighting design. The living room looks like a 5-star hotel lobby now. Excellent craftsmanship and creative design team.', service: 'False Ceiling', location: 'Secunderabad' },
-  { name: 'Ravi Teja', rating: 5, comment: 'Got flooring done for our entire house — Italian marble in the living room and vitrified tiles in bedrooms. The result is stunning. Professional team and great material quality.', service: 'Flooring', location: 'Manikonda' },
-];
+const initialForm = {
+  name: '',
+  rating: 5,
+  review_text: '',
+  service_category: '',
+  photo: null,
+};
 
 export default function Reviews() {
-  const [cmsReviews, setCmsReviews] = useState([]);
+  const [reviews, setReviews] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [form, setForm] = useState(initialForm);
 
   useEffect(() => {
     api.get('/api/reviews')
-      .then(res => {
-        const normalized = (res.data || [])
-          .filter(review => review.active !== false)
-          .map(review => ({
-            name: review.name || review.customer_name,
-            rating: review.rating || 5,
-            comment: review.comment || review.review_text,
-            service: review.service_category,
-            location: review.location,
-          }));
-        setCmsReviews(normalized);
-      })
-      .catch(() => setCmsReviews([]));
+      .then(res => setReviews(res.data || []))
+      .catch(() => setReviews([]))
+      .finally(() => setLoading(false));
   }, []);
 
-  const reviewSource = cmsReviews.length ? cmsReviews : reviews;
+  const submitReview = async (event) => {
+    event.preventDefault();
+    setSubmitting(true);
+    try {
+      const payload = new FormData();
+      payload.append('name', form.name);
+      payload.append('rating', String(form.rating));
+      payload.append('review_text', form.review_text);
+      payload.append('service_category', form.service_category);
+      if (form.photo) payload.append('photo', form.photo);
+
+      await api.post('/api/reviews', payload, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      toast.success('Review submitted. It will appear after admin approval.');
+      setForm(initialForm);
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to submit review.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <div className="pt-24">
-      {/* Hero */}
       <section className="py-20 relative">
         <div className="absolute inset-0 bg-gradient-to-b from-blue-950/30 to-transparent pointer-events-none" />
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative">
           <SectionHeader
             label="Client Reviews"
-            title="Trusted by 100+ Happy Clients"
-            description="Real feedback from homeowners who chose MBC for their dream projects"
+            title="Customer Experiences"
+            description="Approved reviews from customers who worked with Mahathi Building Contractors"
           />
 
-          {/* Overall Rating */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
-            className="glass rounded-2xl p-8 max-w-md mx-auto text-center mb-16"
-          >
-            <div className="text-5xl font-bold text-white font-heading mb-2">4.9</div>
-            <div className="flex items-center justify-center gap-1 mb-3">
-              {[1,2,3,4,5].map((i) => (
-                <Star key={i} className="w-5 h-5 text-yellow-400 fill-yellow-400" />
+          {loading ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              {[1, 2, 3].map(item => <div key={item} className="glass h-64 rounded-2xl animate-pulse" />)}
+            </div>
+          ) : reviews.length === 0 ? (
+            <div className="glass mx-auto max-w-xl rounded-2xl p-12 text-center">
+              <p className="text-sm text-white/45">No reviews yet. Be the first to share your experience.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              {reviews.map((review, index) => (
+                <motion.div
+                  key={review.id}
+                  initial={{ opacity: 0, y: 30 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ duration: 0.5, delay: index * 0.06 }}
+                  className="glass glass-hover rounded-2xl p-6 relative group"
+                >
+                  <Quote className="absolute top-4 right-4 w-8 h-8 text-blue-500/10 group-hover:text-blue-500/20 transition-colors" />
+                  <div className="flex items-center gap-1 mb-4">
+                    {Array.from({ length: review.rating || 5 }, (_, item) => (
+                      <Star key={item} className="w-4 h-4 text-yellow-400 fill-yellow-400" />
+                    ))}
+                  </div>
+                  <p className="text-sm text-white/60 leading-relaxed mb-6">"{review.review_text || review.comment}"</p>
+                  <div className="flex items-center gap-3 pt-4 border-t border-white/5">
+                    {review.photo_url ? (
+                      <img src={review.photo_url} alt={review.customer_name || review.name} className="w-10 h-10 rounded-full object-cover" />
+                    ) : (
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-white text-sm font-bold">
+                        {(review.customer_name || review.name || 'M').charAt(0)}
+                      </div>
+                    )}
+                    <div>
+                      <p className="text-sm font-semibold text-white">{review.customer_name || review.name}</p>
+                      <p className="text-xs text-white/40">{review.service_category || 'Mahathi Contractors'}</p>
+                    </div>
+                  </div>
+                </motion.div>
               ))}
             </div>
-            <p className="text-sm text-white/40">Based on 100+ reviews</p>
-          </motion.div>
+          )}
 
-          {/* Stats */}
-          <div className="grid grid-cols-3 gap-6 max-w-2xl mx-auto mb-16">
-            <AnimatedCounter end={100} suffix="+" label="Happy Clients" icon={Users} />
-            <AnimatedCounter end={98} suffix="%" label="Satisfaction" icon={Heart} />
-            <AnimatedCounter end={95} suffix="%" label="Repeat Clients" icon={Award} />
-          </div>
-
-          {/* Reviews Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {reviewSource.map((review, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, y: 30 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.5, delay: i * 0.06 }}
-                className="glass glass-hover rounded-2xl p-6 relative group"
-              >
-                <Quote className="absolute top-4 right-4 w-8 h-8 text-blue-500/10 group-hover:text-blue-500/20 transition-colors" />
-                <div className="flex items-center gap-1 mb-4">
-                  {Array.from({ length: review.rating }, (_, j) => (
-                    <Star key={j} className="w-4 h-4 text-yellow-400 fill-yellow-400" />
-                  ))}
-                </div>
-                <p className="text-sm text-white/60 leading-relaxed mb-6">"{review.comment}"</p>
-                <div className="flex items-center gap-3 pt-4 border-t border-white/5">
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-white text-sm font-bold">
-                    {review.name?.charAt(0) || 'M'}
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-white">{review.name}</p>
-                    <p className="text-xs text-white/40">{review.service} · {review.location}</p>
-                  </div>
-                </div>
-              </motion.div>
-            ))}
+          <div className="glass mx-auto mt-16 max-w-2xl rounded-2xl p-6 md:p-8">
+            <h2 className="font-heading text-2xl font-bold text-white">Share your experience</h2>
+            <p className="mt-2 text-sm text-white/45">Your review will be visible after admin approval.</p>
+            <form onSubmit={submitReview} className="mt-6 space-y-4">
+              <Input placeholder="Name *" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required className="bg-white/5 border-white/10 text-white" />
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Input type="number" min="1" max="5" placeholder="Rating 1-5 *" value={form.rating} onChange={e => setForm({ ...form, rating: Number(e.target.value) })} required className="bg-white/5 border-white/10 text-white" />
+                <Input placeholder="Service / project reference" value={form.service_category} onChange={e => setForm({ ...form, service_category: e.target.value })} className="bg-white/5 border-white/10 text-white" />
+              </div>
+              <Textarea placeholder="Review message *" value={form.review_text} onChange={e => setForm({ ...form, review_text: e.target.value })} required className="min-h-[120px] bg-white/5 border-white/10 text-white" />
+              <label className="block rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/60">
+                Optional photo
+                <input type="file" accept="image/*" onChange={e => setForm({ ...form, photo: e.target.files?.[0] || null })} className="mt-2 block w-full text-xs text-white/45" />
+              </label>
+              <Button type="submit" disabled={submitting} className="w-full rounded-xl bg-blue-600 text-white hover:bg-blue-500">
+                <Send className="mr-2 h-4 w-4" /> {submitting ? 'Submitting...' : 'Submit Review'}
+              </Button>
+            </form>
           </div>
         </div>
       </section>

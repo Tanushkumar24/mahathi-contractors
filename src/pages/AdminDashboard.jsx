@@ -5,7 +5,7 @@ import {
   TrendingUp, Search, ChevronDown, LayoutDashboard, FolderKanban,
   Star, Settings, LogOut, Menu, X, Mail, UserCheck,
   Plus, Pencil, Trash2, Eye, BarChart2, CheckCircle2, AlertCircle, Wrench,
-  Navigation, RefreshCw, Wifi, WifiOff, Upload, Image as ImageIcon, Video
+  Navigation, RefreshCw, Wifi, WifiOff, Upload
 } from 'lucide-react';
 import { QRCodeCanvas } from 'qrcode.react';
 import api from '@/lib/api';
@@ -35,7 +35,7 @@ const emptyProjectForm = {
   description: '',
   client_name: '',
   image_url: '',
-  media_urls: [],
+  image_urls: [],
   video_urls: []
 };
 
@@ -48,6 +48,7 @@ const emptyReviewForm = {
   service_category: '',
   location: '',
   photo_url: '',
+  status: 'approved',
   active: true,
   is_featured: false
 };
@@ -355,7 +356,7 @@ function ProjectsPage() {
   const saveProject = async () => {
     const payload = {
       ...form,
-      media_urls: normalizeArray(form.media_urls),
+      image_urls: normalizeArray(form.image_urls),
       video_urls: normalizeArray(form.video_urls)
     };
 
@@ -372,7 +373,7 @@ function ProjectsPage() {
   };
 
   const deleteProject = async (id) => {
-    if (!window.confirm('Delete this project? Existing media in Cloudinary will not be removed unless deleted from Media Gallery.')) return;
+    if (!window.confirm('Delete this project?')) return;
     await api.delete(`/api/projects/${id}`);
     setProjects(prev => prev.filter(p => p.id !== id));
     toast.success('Project deleted.');
@@ -381,11 +382,11 @@ function ProjectsPage() {
   const startEdit = (p) => {
     setEditProject(p);
     setForm({
-      ...emptyProjectForm,
-      ...p,
-      media_urls: normalizeArray(p.media_urls || p.image_url),
-      video_urls: normalizeArray(p.video_urls)
-    });
+        ...emptyProjectForm,
+        ...p,
+        image_urls: normalizeArray(p.image_urls || p.media_urls || p.image_url),
+        video_urls: normalizeArray(p.video_urls)
+      });
     setShowForm(true);
   };
 
@@ -396,10 +397,10 @@ function ProjectsPage() {
       const uploaded = await uploadAdminFile(file, { linked_type: 'project', linked_id: editProject?.id });
       if (uploaded.resource_type === 'video') {
         setForm(prev => ({ ...prev, video_urls: [...normalizeArray(prev.video_urls), uploaded.secure_url || uploaded.url] }));
-      } else {
-        const url = uploaded.secure_url || uploaded.url;
-        setForm(prev => ({ ...prev, image_url: prev.image_url || url, media_urls: [...normalizeArray(prev.media_urls), url] }));
-      }
+        } else {
+          const url = uploaded.secure_url || uploaded.url;
+          setForm(prev => ({ ...prev, image_url: prev.image_url || url, image_urls: [...normalizeArray(prev.image_urls), url] }));
+        }
       toast.success('Media uploaded.');
     } catch (err) {
       toast.error(err.response?.data?.error || 'Upload failed.');
@@ -442,7 +443,7 @@ function ProjectsPage() {
               <input type="file" accept="image/*,video/*" className="hidden" onChange={(e) => uploadProjectMedia(e.target.files?.[0])} disabled={!!uploading} />
             </label>
             <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
-              {normalizeArray(form.media_urls).map((url) => (
+              {normalizeArray(form.image_urls).map((url) => (
                 <img key={url} src={url} alt="Project media" className="h-24 w-full rounded-xl object-cover" />
               ))}
               {normalizeArray(form.video_urls).map((url) => (
@@ -462,8 +463,8 @@ function ProjectsPage() {
       : <div className="space-y-3">
           {projects.map((p, i) => (
             <div key={p.id} className="glass rounded-xl p-4 flex items-center gap-4">
-              {(p.image_url || normalizeArray(p.media_urls)[0]) && (
-                <img src={p.image_url || normalizeArray(p.media_urls)[0]} alt={p.title} className="h-16 w-20 rounded-xl object-cover" />
+              {(p.image_url || normalizeArray(p.image_urls || p.media_urls)[0]) && (
+                <img src={p.image_url || normalizeArray(p.image_urls || p.media_urls)[0]} alt={p.title} className="h-16 w-20 rounded-xl object-cover" />
               )}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap mb-1">
@@ -501,7 +502,7 @@ function ReviewsPage() {
   const [form, setForm] = useState({ name: '', rating: 5, comment: '', service_category: '', location: '', is_featured: false });
 
   useEffect(() => {
-    api.get('/api/reviews').then(res => { setReviews(res.data); setLoading(false); });
+    api.get('/api/admin/reviews').then(res => { setReviews(res.data); setLoading(false); });
   }, []);
 
   const saveReview = async () => {
@@ -619,7 +620,7 @@ function ReviewsCmsPage() {
       setReviews(prev => prev.map(r => r.id === editReview.id ? res.data : r));
       toast.success('Review updated.');
     } else {
-      const res = await api.post('/api/reviews', payload);
+      const res = await api.post('/api/admin/reviews', payload);
       setReviews(prev => [res.data, ...prev]);
       toast.success('Review added.');
     }
@@ -631,6 +632,16 @@ function ReviewsCmsPage() {
     await api.delete(`/api/reviews/${id}`);
     setReviews(prev => prev.filter(r => r.id !== id));
     toast.success('Review deleted.');
+  };
+
+  const updateReviewStatus = async (review, status) => {
+    const res = await api.put(`/api/reviews/${review.id}`, {
+      ...review,
+      status,
+      active: status === 'approved'
+    });
+    setReviews(prev => prev.map(r => r.id === review.id ? res.data : r));
+    toast.success(status === 'approved' ? 'Review approved.' : 'Review rejected.');
   };
 
   const uploadPhoto = async (file) => {
@@ -665,6 +676,11 @@ function ReviewsCmsPage() {
             <Input placeholder="Service/category" value={form.service_category} onChange={e => setForm({ ...form, service_category: e.target.value })} className="bg-white/5 border-white/10 text-white" />
             <Input placeholder="Location" value={form.location} onChange={e => setForm({ ...form, location: e.target.value })} className="bg-white/5 border-white/10 text-white" />
             <Input placeholder="Photo URL" value={form.photo_url || ''} onChange={e => setForm({ ...form, photo_url: e.target.value })} className="bg-white/5 border-white/10 text-white" />
+            <select value={form.status} onChange={e => setForm({ ...form, status: e.target.value, active: e.target.value === 'approved' })} className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white">
+              <option value="pending" className="bg-[#0A0E1A]">Pending</option>
+              <option value="approved" className="bg-[#0A0E1A]">Approved</option>
+              <option value="rejected" className="bg-[#0A0E1A]">Rejected</option>
+            </select>
             <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-white/10 px-4 py-2.5 text-sm text-white/70 hover:bg-white/5">
               <Upload className="h-4 w-4" /> {uploading ? 'Uploading...' : 'Upload Photo'}
               <input type="file" accept="image/*" className="hidden" onChange={(e) => uploadPhoto(e.target.files?.[0])} disabled={uploading} />
@@ -699,12 +715,21 @@ function ReviewsCmsPage() {
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="font-semibold text-white">{review.name || review.customer_name}</h3>
                   <span className="text-xs text-yellow-400">{'★'.repeat(review.rating || 5)}</span>
+                  <span className={`rounded-full border px-2 py-0.5 text-[10px] ${
+                    review.status === 'approved'
+                      ? 'border-green-500/20 bg-green-500/10 text-green-300'
+                      : review.status === 'rejected'
+                        ? 'border-red-500/20 bg-red-500/10 text-red-300'
+                        : 'border-yellow-500/20 bg-yellow-500/10 text-yellow-300'
+                  }`}>{review.status || 'pending'}</span>
                   {review.active === false && <span className="rounded-full border border-red-500/20 bg-red-500/10 px-2 py-0.5 text-[10px] text-red-300">Hidden</span>}
                 </div>
                 <p className="mt-1 text-xs text-white/45">{review.comment || review.review_text}</p>
                 <p className="mt-1 text-[10px] text-white/30">{[review.service_category, review.location].filter(Boolean).join(' - ')}</p>
               </div>
               <button onClick={() => startEdit(review)} className="p-2 rounded-lg hover:bg-white/5 text-white/40 hover:text-blue-400"><Pencil className="w-4 h-4" /></button>
+              <button onClick={() => updateReviewStatus(review, 'approved')} className="rounded-lg bg-green-500/10 px-3 py-2 text-xs font-semibold text-green-300 hover:bg-green-500/20">Approve</button>
+              <button onClick={() => updateReviewStatus(review, 'rejected')} className="rounded-lg bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-300 hover:bg-red-500/20">Reject</button>
               <button onClick={() => deleteReview(review.id)} className="p-2 rounded-lg hover:bg-white/5 text-white/40 hover:text-red-400"><Trash2 className="w-4 h-4" /></button>
             </div>
           ))}
@@ -976,92 +1001,6 @@ function UsersPage() {
   );
 }
 
-function MediaGalleryPage() {
-  const [media, setMedia] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [uploading, setUploading] = useState(false);
-
-  const loadMedia = async () => {
-    setLoading(true);
-    try {
-      const res = await api.get('/api/media');
-      setMedia(res.data);
-    } catch (err) {
-      toast.error(err.response?.data?.error || 'Failed to load media.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadMedia();
-  }, []);
-
-  const uploadMedia = async (file) => {
-    if (!file) return;
-    setUploading(true);
-    try {
-      const uploaded = await uploadAdminFile(file, { title: file.name });
-      setMedia(prev => [uploaded, ...prev]);
-      toast.success('Media uploaded.');
-    } catch (err) {
-      toast.error(err.response?.data?.error || 'Upload failed.');
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const deleteMedia = async (item) => {
-    if (!window.confirm('Delete this media item from gallery and Cloudinary?')) return;
-    await api.delete(`/api/admin/media/${item.id}`);
-    setMedia(prev => prev.filter(m => m.id !== item.id));
-    toast.success('Media deleted.');
-  };
-
-  return (
-    <div className="space-y-5">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 className="text-xl font-bold text-white font-heading">Media Gallery</h2>
-          <p className="mt-1 text-xs text-white/40">Upload and manage website photos and videos.</p>
-        </div>
-        <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-500">
-          <Upload className="h-4 w-4" /> {uploading ? 'Uploading...' : 'Upload Media'}
-          <input type="file" accept="image/*,video/*" className="hidden" onChange={(e) => uploadMedia(e.target.files?.[0])} disabled={uploading} />
-        </label>
-      </div>
-
-      {loading ? <div className="glass rounded-xl p-5 h-24 animate-pulse" />
-      : media.length === 0 ? <div className="glass rounded-2xl p-12 text-center"><p className="text-white/40">No media uploaded yet.</p></div>
-      : <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {media.map(item => (
-            <div key={item.id || item.public_id} className="glass rounded-2xl overflow-hidden">
-              <div className="h-48 bg-white/5">
-                {item.resource_type === 'video' ? (
-                  <video src={item.url || item.secure_url} controls className="h-full w-full object-cover" />
-                ) : (
-                  <img src={item.url || item.secure_url} alt={item.title || 'Gallery media'} className="h-full w-full object-cover" />
-                )}
-              </div>
-              <div className="p-4 flex items-center gap-3">
-                <div className="flex-1 min-w-0">
-                  <p className="truncate text-sm font-semibold text-white">{item.title || item.public_id}</p>
-                  <p className="mt-1 flex items-center gap-1 text-xs text-white/40">
-                    {item.resource_type === 'video' ? <Video className="h-3 w-3" /> : <ImageIcon className="h-3 w-3" />}
-                    {item.resource_type || 'image'}
-                  </p>
-                </div>
-                <button onClick={() => deleteMedia(item)} className="rounded-lg bg-red-500/10 p-2 text-red-300 hover:bg-red-500/20">
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>}
-    </div>
-  );
-}
-
 function SettingsPage() {
   const SETTINGS = [
     { label: 'Primary WhatsApp', value: '+91 8688074469' },
@@ -1164,7 +1103,6 @@ const sidebarItems = [
   { id: 'projects', label: 'Projects', icon: FolderKanban },
   { id: 'services', label: 'Services', icon: Wrench },
   { id: 'reviews', label: 'Reviews', icon: Star },
-  { id: 'media', label: 'Media Gallery', icon: ImageIcon },
   { id: 'users', label: 'Users', icon: Users },
   { id: 'settings', label: 'Settings', icon: Settings },
 ];
@@ -1226,7 +1164,6 @@ export default function AdminDashboard() {
       case 'projects': return <ProjectsPage />;
       case 'services': return <ServicesPage />;
       case 'reviews': return <ReviewsCmsPage />;
-      case 'media': return <MediaGalleryPage />;
       case 'users': return <UsersPage />;
       case 'settings': return <SettingsPage />;
       default: return <DashboardHome bookings={bookings} stats={stats} />;
