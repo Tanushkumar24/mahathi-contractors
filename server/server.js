@@ -853,6 +853,7 @@ app.post('/api/bookings', async (req, res) => {
     address,
     latitude,
     longitude,
+    location_accuracy,
     notes,
     created_by_id,
     send_whatsapp_updates = true,
@@ -873,6 +874,7 @@ app.post('/api/bookings', async (req, res) => {
       address,
       latitude: latitude ?? null,
       longitude: longitude ?? null,
+      location_accuracy: location_accuracy ?? null,
       notes,
       send_whatsapp_updates,
       whatsapp_opt_in,
@@ -892,11 +894,12 @@ app.post('/api/bookings', async (req, res) => {
       error = fallbackResult.error;
     }
 
-    if (error && /whatsapp_opt_in|latitude|longitude/i.test(error.message || '')) {
+    if (error && /whatsapp_opt_in|latitude|longitude|location_accuracy/i.test(error.message || '')) {
       const {
         whatsapp_opt_in: _whatsappOptIn,
         latitude: _latitude,
         longitude: _longitude,
+        location_accuracy: _locationAccuracy,
         ...fallbackPayload
       } = bookingPayload;
       const fallbackResult = await supabase.from('bookings').insert(fallbackPayload).select();

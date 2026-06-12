@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS bookings (
     address TEXT NOT NULL,
     latitude NUMERIC,
     longitude NUMERIC,
+    location_accuracy NUMERIC,
     notes TEXT,
     send_whatsapp_updates BOOLEAN DEFAULT TRUE,
     whatsapp_opt_in BOOLEAN DEFAULT FALSE,
@@ -55,6 +56,7 @@ CREATE TABLE IF NOT EXISTS bookings (
 
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS latitude NUMERIC;
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS longitude NUMERIC;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS location_accuracy NUMERIC;
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS whatsapp_opt_in BOOLEAN DEFAULT FALSE;
 
 -- 4. Leads / Contact Enquiries Table

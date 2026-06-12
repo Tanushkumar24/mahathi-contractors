@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import api from '@/lib/api';
 import { useAuth } from '@/lib/AuthContext';
 import { toast } from 'sonner';
-import { format, addDays } from 'date-fns';
+import { addDays, format } from 'date-fns';
 
 const services = [
   'House Construction', 'Commercial Construction', 'Renovation', 'Interior Design',
@@ -17,7 +17,7 @@ const services = [
 
 const timeSlots = {
   Morning: ['9:00 AM', '10:00 AM', '11:00 AM'],
-  Afternoon: ['1:00 PM', '2:00 PM', '3:00 PM'],
+  Afternoon: ['12:00 PM', '1:00 PM', '2:00 PM', '3:00 PM', '4:00 PM'],
   Evening: ['5:00 PM', '6:00 PM', '7:00 PM'],
 };
 
@@ -59,6 +59,28 @@ const scoreLocalResult = (suggestion) => {
   return score;
 };
 
+const isTodayDate = (dateStr) => dateStr === format(new Date(), 'yyyy-MM-dd');
+
+const getSlotDate = (dateStr, slot) => {
+  const match = slot.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (!dateStr || !match) return null;
+
+  let hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  const meridiem = match[3].toUpperCase();
+  if (meridiem === 'PM' && hours !== 12) hours += 12;
+  if (meridiem === 'AM' && hours === 12) hours = 0;
+
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return new Date(year, month - 1, day, hours, minutes, 0, 0);
+};
+
+const isUpcomingSlot = (dateStr, slot) => {
+  if (!isTodayDate(dateStr)) return true;
+  const slotDate = getSlotDate(dateStr, slot);
+  return slotDate ? slotDate.getTime() > Date.now() : true;
+};
+
 export default function Book() {
   const { user } = useAuth();
   const [step, setStep] = useState(0);
@@ -71,6 +93,7 @@ export default function Book() {
     address: '',
     latitude: null,
     longitude: null,
+    location_accuracy: null,
     notes: '',
     send_whatsapp_updates: true,
     whatsapp_opt_in: true,
@@ -79,6 +102,8 @@ export default function Book() {
   const [locating, setLocating] = useState(false);
   const [addressLoading, setAddressLoading] = useState(false);
   const [addressSuggestions, setAddressSuggestions] = useState([]);
+  const [addressSearchStatus, setAddressSearchStatus] = useState('idle');
+  const [selectedAddressValue, setSelectedAddressValue] = useState('');
 
   useEffect(() => {
     if (user) {
@@ -90,24 +115,26 @@ export default function Book() {
     }
   }, [user]);
 
-  const dates = Array.from({ length: 14 }, (_, i) => addDays(new Date(), i + 1));
+  const dates = Array.from({ length: 14 }, (_, i) => addDays(new Date(), i));
 
   useEffect(() => {
     const addressQuery = booking.address.trim();
 
-    if (addressQuery.length < 3) {
+    if (addressQuery.length < 3 || addressQuery === selectedAddressValue.trim()) {
       setAddressSuggestions([]);
+      setAddressSearchStatus('idle');
       return;
     }
 
     const timeout = setTimeout(async () => {
       try {
         setAddressLoading(true);
+        setAddressSearchStatus('loading');
         const params = new URLSearchParams({
           q: withLocalAddressContext(addressQuery),
           format: 'json',
           addressdetails: '1',
-          limit: '5',
+          limit: '6',
           countrycodes: 'in',
           viewbox: VIJAYAWADA_VIEWBOX,
           bounded: '0',
@@ -120,9 +147,11 @@ export default function Book() {
         const data = await res.json();
         const prioritized = [...(data || [])].sort((a, b) => scoreLocalResult(b) - scoreLocalResult(a));
         setAddressSuggestions(prioritized);
+        setAddressSearchStatus('done');
       } catch (err) {
         console.warn('Address autocomplete failed:', err);
         setAddressSuggestions([]);
+        setAddressSearchStatus('error');
       } finally {
         setAddressLoading(false);
       }
@@ -137,17 +166,23 @@ export default function Book() {
       address,
       latitude: null,
       longitude: null,
+      location_accuracy: null,
     }));
+    setSelectedAddressValue('');
   };
 
   const selectAddressSuggestion = (suggestion) => {
+    const selectedAddress = suggestion.display_name;
     setBooking((prev) => ({
       ...prev,
-      address: suggestion.display_name,
+      address: selectedAddress,
       latitude: Number(suggestion.lat),
       longitude: Number(suggestion.lon),
+      location_accuracy: null,
     }));
+    setSelectedAddressValue(selectedAddress);
     setAddressSuggestions([]);
+    setAddressSearchStatus('idle');
   };
 
   const reverseGeocode = async (latitude, longitude) => {
@@ -181,16 +216,27 @@ export default function Book() {
     setLocating(true);
     navigator.geolocation.getCurrentPosition(
       async (position) => {
-        const { latitude, longitude } = position.coords;
+        const { latitude, longitude, accuracy } = position.coords;
         try {
           const address = await reverseGeocode(latitude, longitude);
-          setBooking((prev) => ({ ...prev, address, latitude, longitude }));
+          setBooking((prev) => ({ ...prev, address, latitude, longitude, location_accuracy: accuracy ?? null }));
+          setSelectedAddressValue(address);
           setAddressSuggestions([]);
-          toast.success('Current location added.');
+          if (accuracy && accuracy > 100) {
+            toast.warning('Location accuracy is low. Please confirm manually.');
+          } else {
+            toast.success('Current location added.');
+          }
         } catch (err) {
           console.warn('Reverse geocoding failed:', err);
-          setBooking((prev) => ({ ...prev, address: `${latitude}, ${longitude}`, latitude, longitude }));
-          toast.success('Location captured. Please confirm the address.');
+          const coordinateAddress = `${latitude}, ${longitude}`;
+          setBooking((prev) => ({ ...prev, address: coordinateAddress, latitude, longitude, location_accuracy: accuracy ?? null }));
+          setSelectedAddressValue(coordinateAddress);
+          if (accuracy && accuracy > 100) {
+            toast.warning('Location accuracy is low. Please confirm manually.');
+          } else {
+            toast.success('Location captured. Please confirm the address.');
+          }
         } finally {
           setLocating(false);
         }
@@ -203,9 +249,15 @@ export default function Book() {
           toast.error('Could not get current location. Please type your address manually.');
         }
       },
-      { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 }
+      { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
     );
   };
+
+  useEffect(() => {
+    if (booking.date && booking.time_slot && !isUpcomingSlot(booking.date, booking.time_slot)) {
+      setBooking((prev) => ({ ...prev, time_slot: '' }));
+    }
+  }, [booking.date, booking.time_slot]);
 
   const canProceed = () => {
     if (step === 0) return booking.service_name;
@@ -227,6 +279,7 @@ export default function Book() {
         contact_phone: `+91${booking.contact_phone}`,
         whatsapp_opt_in: booking.whatsapp_opt_in,
         send_whatsapp_updates: booking.whatsapp_opt_in,
+        location_accuracy: booking.location_accuracy,
         created_by_id: user?.id || null,
       });
       toast.success('Booking received. Our team will contact you shortly.');
@@ -240,14 +293,14 @@ export default function Book() {
 
   return (
     <div className="min-h-screen pt-24">
-      <section className="relative py-16">
-        <div className="absolute inset-0 bg-gradient-to-b from-blue-950/30 to-transparent pointer-events-none" />
-        <div className="relative mx-auto max-w-3xl px-4 sm:px-6 lg:px-8">
+      <section className="relative overflow-visible py-16">
+        <div className="absolute inset-0 bg-gradient-to-br from-amber-950/20 via-slate-950/10 to-blue-950/20 pointer-events-none" />
+        <div className="relative mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
           <div className="mb-10 text-center">
-            <p className="mb-3 text-xs font-semibold uppercase tracking-[0.3em] text-blue-400">Book a site visit</p>
-            <h1 className="font-heading text-3xl font-bold text-white md:text-5xl">Tell us what you want built</h1>
+            <p className="mb-3 text-xs font-semibold uppercase tracking-[0.3em] text-amber-300">Mahathi Building Contractors</p>
+            <h1 className="font-heading text-3xl font-bold text-white md:text-5xl">Book a professional site visit</h1>
             <p className="mx-auto mt-4 max-w-2xl text-sm leading-6 text-white/50">
-              Guests can book without login. Our team will review your requirement and contact you with the next steps.
+              Share your service, schedule, and location. Guests can book without login and our Vijayawada team will contact you with the next steps.
             </p>
           </div>
 
@@ -267,7 +320,7 @@ export default function Book() {
 
           <AnimatePresence mode="wait">
             {step === 0 && (
-              <motion.div key="service" initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -24 }} className="glass rounded-2xl p-6 md:p-8">
+              <motion.div key="service" initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -24 }} className="glass relative overflow-visible rounded-2xl p-6 md:p-8">
                 <h2 className="font-heading text-2xl font-bold text-white">Select a service</h2>
                 <p className="mb-6 mt-2 text-sm text-white/45">Choose the work category that best matches your requirement.</p>
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -289,7 +342,7 @@ export default function Book() {
             )}
 
             {step === 1 && (
-              <motion.div key="schedule" initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -24 }} className="glass rounded-2xl p-6 md:p-8">
+              <motion.div key="schedule" initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -24 }} className="glass relative overflow-visible rounded-2xl p-6 md:p-8">
                 <h2 className="font-heading text-2xl font-bold text-white">Pick date and time</h2>
                 <p className="mb-6 mt-2 text-sm text-white/45">Select a convenient slot for our team to contact or visit you.</p>
                 <label className="mb-3 block text-xs uppercase tracking-wider text-white/40">Date</label>
@@ -299,7 +352,7 @@ export default function Book() {
                     return (
                       <button
                         key={dateStr}
-                        onClick={() => setBooking({ ...booking, date: dateStr })}
+                        onClick={() => setBooking({ ...booking, date: dateStr, time_slot: isUpcomingSlot(dateStr, booking.time_slot) ? booking.time_slot : '' })}
                         className={`flex shrink-0 flex-col items-center rounded-xl border px-4 py-3 text-xs transition ${
                           booking.date === dateStr ? 'border-blue-500/40 bg-blue-500/20 text-blue-300' : 'border-white/5 bg-white/[0.03] text-white/50'
                         }`}
@@ -313,22 +366,35 @@ export default function Book() {
                 </div>
 
                 <label className="mb-3 block text-xs uppercase tracking-wider text-white/40">Time</label>
+                {isTodayDate(booking.date) && (
+                  <p className="mb-4 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-amber-200">
+                    For today, only upcoming time slots are available.
+                  </p>
+                )}
                 <div className="space-y-4">
                   {Object.entries(timeSlots).map(([period, slots]) => (
                     <div key={period}>
                       <p className="mb-2 text-xs text-white/35">{period}</p>
                       <div className="flex flex-wrap gap-2">
-                        {slots.map((slot) => (
-                          <button
-                            key={slot}
-                            onClick={() => setBooking({ ...booking, time_slot: slot })}
-                            className={`rounded-xl border px-4 py-2 text-sm font-semibold transition ${
-                              booking.time_slot === slot ? 'border-blue-500/40 bg-blue-500/20 text-blue-300' : 'border-white/5 bg-white/[0.03] text-white/50'
-                            }`}
-                          >
-                            {slot}
-                          </button>
-                        ))}
+                        {slots.map((slot) => {
+                          const disabled = booking.date && !isUpcomingSlot(booking.date, slot);
+                          return (
+                            <button
+                              key={slot}
+                              onClick={() => !disabled && setBooking({ ...booking, time_slot: slot })}
+                              disabled={disabled}
+                              className={`rounded-xl border px-4 py-2 text-sm font-semibold transition ${
+                                booking.time_slot === slot
+                                  ? 'border-blue-500/40 bg-blue-500/20 text-blue-300'
+                                  : disabled
+                                    ? 'cursor-not-allowed border-white/5 bg-white/[0.02] text-white/20 line-through'
+                                    : 'border-white/5 bg-white/[0.03] text-white/50 hover:bg-white/[0.07] hover:text-white'
+                              }`}
+                            >
+                              {slot}
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
                   ))}
@@ -337,7 +403,7 @@ export default function Book() {
             )}
 
             {step === 2 && (
-              <motion.div key="details" initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -24 }} className="glass rounded-2xl p-6 md:p-8">
+              <motion.div key="details" initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -24 }} className="glass relative overflow-visible rounded-2xl p-6 md:p-8">
                 <h2 className="font-heading text-2xl font-bold text-white">Your details</h2>
                 <p className="mb-6 mt-2 text-sm text-white/45">No verification code required. We use these details only to coordinate your booking.</p>
                 <div className="space-y-4">
@@ -359,12 +425,18 @@ export default function Book() {
                       {locating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Navigation className="h-4 w-4" />}
                       Use Current Location
                     </Button>
-                    <div className="relative">
+                    <div className="relative z-[100] overflow-visible">
                       <Textarea placeholder="Address / City *" value={booking.address} onChange={(e) => updateAddress(e.target.value)} className="min-h-[90px] rounded-xl border-white/10 bg-white/5 text-white placeholder:text-white/30" />
                       <p className="mt-2 text-xs text-white/35">Select the closest address from suggestions or type manually.</p>
-                      {(addressLoading || addressSuggestions.length > 0) && (
-                        <div className="absolute left-0 right-0 top-full z-20 mt-2 max-h-56 overflow-y-auto rounded-xl border border-white/10 bg-[#0A0E1A] shadow-xl">
+                      {booking.address.trim().length >= 3 && addressSearchStatus !== 'idle' && (
+                        <div className="absolute left-0 right-0 top-full z-[9999] mt-2 max-h-[240px] overflow-y-auto rounded-xl border border-amber-400/20 bg-[#0A0E1A] shadow-2xl shadow-black/50">
                           {addressLoading && <div className="px-4 py-3 text-xs text-white/40">Searching address...</div>}
+                          {!addressLoading && addressSearchStatus === 'error' && (
+                            <div className="px-4 py-3 text-xs text-red-300">Address search failed. Please type manually.</div>
+                          )}
+                          {!addressLoading && addressSearchStatus === 'done' && addressSuggestions.length === 0 && (
+                            <div className="px-4 py-3 text-xs text-white/45">No address found. Please type manually.</div>
+                          )}
                           {!addressLoading && addressSuggestions.map((suggestion) => {
                             const { place, area, city, state } = getAddressParts(suggestion);
                             const locationLine = [area, city, state].filter(Boolean).join(' - ');
@@ -385,7 +457,10 @@ export default function Book() {
                       )}
                     </div>
                     {booking.latitude && booking.longitude && (
-                      <p className="text-xs text-green-400">Location saved: {Number(booking.latitude).toFixed(5)}, {Number(booking.longitude).toFixed(5)}</p>
+                      <p className="text-xs text-green-400">
+                        Location saved: {Number(booking.latitude).toFixed(5)}, {Number(booking.longitude).toFixed(5)}
+                        {booking.location_accuracy ? ` - accuracy ${Math.round(booking.location_accuracy)}m` : ''}
+                      </p>
                     )}
                   </div>
                   <Textarea placeholder="Notes (optional)" value={booking.notes} onChange={(e) => setBooking({ ...booking, notes: e.target.value })} className="min-h-[90px] rounded-xl border-white/10 bg-white/5 text-white placeholder:text-white/30" />
@@ -403,7 +478,7 @@ export default function Book() {
             )}
 
             {step === 3 && (
-              <motion.div key="confirm" initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -24 }} className="glass rounded-2xl p-6 md:p-8">
+              <motion.div key="confirm" initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -24 }} className="glass relative overflow-visible rounded-2xl p-6 md:p-8">
                 <h2 className="font-heading text-2xl font-bold text-white">Confirm booking</h2>
                 <p className="mb-6 mt-2 text-sm text-white/45">Review your request before submitting.</p>
                 <div className="space-y-4">

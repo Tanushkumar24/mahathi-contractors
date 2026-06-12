@@ -142,6 +142,8 @@ function BookingsPage() {
         <div className="space-y-3">
           {filtered.map((b, i) => {
             const cfg = statusConfig[b.status] || statusConfig.pending;
+            const hasCoordinates = b.latitude !== null && b.latitude !== undefined && b.longitude !== null && b.longitude !== undefined;
+            const accuracy = b.location_accuracy !== null && b.location_accuracy !== undefined ? Math.round(Number(b.location_accuracy)) : null;
             return (
               <motion.div key={b.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.02 }} className="glass rounded-2xl p-5">
                 <div className="flex flex-col sm:flex-row sm:items-center gap-4">
@@ -155,7 +157,9 @@ function BookingsPage() {
                       {b.contact_phone && <span className="flex items-center gap-1 text-white/60 font-medium"><Phone className="w-3 h-3" />{b.contact_phone}</span>}
                       {b.date && <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />{format(new Date(b.date), 'dd MMM yyyy')}</span>}
                       {b.time_slot && <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{b.time_slot}</span>}
-                      {b.address && <span className="flex items-center gap-1 max-w-xs truncate"><MapPin className="w-3 h-3 shrink-0" />{b.address}</span>}
+                      {b.address && <span className="flex items-center gap-1 max-w-md truncate"><MapPin className="w-3 h-3 shrink-0" />Address: {b.address}</span>}
+                      {hasCoordinates && <span className="flex items-center gap-1 text-cyan-300/80"><Navigation className="w-3 h-3" />Lat: {Number(b.latitude).toFixed(5)}, Lng: {Number(b.longitude).toFixed(5)}</span>}
+                      {accuracy !== null && !Number.isNaN(accuracy) && <span className="flex items-center gap-1 text-white/40">Accuracy: {accuracy}m</span>}
                       <span className={`flex items-center gap-1 font-medium ${(b.whatsapp_opt_in ?? b.send_whatsapp_updates) ? 'text-green-400' : 'text-red-300'}`}>
                         <MessageCircle className="w-3 h-3" /> WhatsApp: {(b.whatsapp_opt_in ?? b.send_whatsapp_updates) ? 'ON' : 'OFF'}
                       </span>
