@@ -91,20 +91,40 @@ const DEFAULT_SERVICES = [
 ];
 
 async function getServicesWithDefaults() {
-  const { data: services, error } = await supabase
-    .from('services')
-    .select('*')
-    .order('created_at', { ascending: false });
+  const selectResult = await withTimeout(
+    supabase.from('services').select('*').order('created_at', { ascending: false }),
+    8000,
+    'Supabase services query timed out.'
+  );
+  const { data: services, error } = selectResult;
 
-  if (error) throw error;
+  if (error) {
+    console.error('[services] Supabase query failed. Returning default services fallback:', {
+      message: error.message,
+      code: error.code,
+      details: error.details,
+      hint: error.hint
+    });
+    return DEFAULT_SERVICES;
+  }
   if (services?.length) return services;
 
-  const { data: seeded, error: seedError } = await supabase
-    .from('services')
-    .insert(DEFAULT_SERVICES)
-    .select();
+  const seedResult = await withTimeout(
+    supabase.from('services').insert(DEFAULT_SERVICES).select(),
+    8000,
+    'Supabase services seed timed out.'
+  );
+  const { data: seeded, error: seedError } = seedResult;
 
-  if (seedError) throw seedError;
+  if (seedError) {
+    console.error('[services] Supabase seed failed. Returning default services fallback:', {
+      message: seedError.message,
+      code: seedError.code,
+      details: seedError.details,
+      hint: seedError.hint
+    });
+    return DEFAULT_SERVICES;
+  }
   return seeded || [];
 }
 
@@ -187,10 +207,11 @@ function projectPayloadFromBody(body = {}) {
   };
 }
 
+const smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com';
 const smtpPort = Number(process.env.SMTP_PORT || 587);
-const mailTransporter = process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS
+const mailTransporter = process.env.SMTP_USER && process.env.SMTP_PASS
   ? nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
+      host: smtpHost,
       port: smtpPort,
       secure: smtpPort === 465,
       connectionTimeout: 10000,
@@ -353,14 +374,16 @@ async function sendVerificationEmail(email, otp) {
   const fromEmail = process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER;
   console.log('[Email OTP] Send start:', {
     to: email,
-    host: process.env.SMTP_HOST,
+    host: smtpHost,
     port: smtpPort,
     fromEmail,
     fromName
   });
 
   try {
-    await withTimeout(mailTransporter.verify(), 10000, 'SMTP verification timed out.');
+    console.log('[Email OTP] SMTP transporter verify started.');
+    await withTimeout(mailTransporter.verify(), 4000, 'SMTP verification timed out.');
+    console.log('[Email OTP] SMTP transporter verify success. sendMail started.');
     const info = await withTimeout(mailTransporter.sendMail({
       from: `"${fromName}" <${fromEmail}>`,
       to: email,
@@ -373,11 +396,11 @@ async function sendVerificationEmail(email, otp) {
           <p>It is valid for 10 minutes.</p>
         </div>
       `
-    }), 10000, 'SMTP send timed out.');
+    }), 6000, 'SMTP send timed out.');
     console.log('[Email OTP] Send success:', { to: email, messageId: info.messageId, response: info.response });
   } catch (err) {
     console.error('[Email OTP] Send failed:', err);
-    throw new Error('Failed to send verification email. Check SMTP settings.');
+    throw new Error('Failed to send OTP email');
   }
 }
 
@@ -545,7 +568,11 @@ app.post('/api/auth/send-email-otp', async (req, res) => {
 
   try {
     console.log('[Email OTP] Checking existing user profile:', { email });
-    const existingUser = await findUserProfileByEmail(email);
+    const existingUser = await withTimeout(
+      findUserProfileByEmail(email),
+      3000,
+      'Supabase user existence check timed out.'
+    );
     if (existingUser.error) {
       console.error('[Email OTP] User existence check failed:', existingUser.error);
       return res.status(500).json({ error: 'Failed to check user profile.', details: existingUser.error.message });
@@ -555,15 +582,20 @@ app.post('/api/auth/send-email-otp', async (req, res) => {
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
     console.log('[Email OTP] OTP generated and inserting record:', { email, expiresAt });
 
-    const { error } = await supabase
-      .from('email_otps')
-      .insert({
-        email,
-        otp,
-        expires_at: expiresAt,
-        verified: false,
-        attempts: 0
-      });
+    const otpInsert = await withTimeout(
+      supabase
+        .from('email_otps')
+        .insert({
+          email,
+          otp,
+          expires_at: expiresAt,
+          verified: false,
+          attempts: 0
+        }),
+      3000,
+      'Supabase email OTP insert timed out.'
+    );
+    const { error } = otpInsert;
 
     if (error) {
       console.error('[Email OTP] Supabase OTP insert failed:', error);
@@ -582,7 +614,7 @@ app.post('/api/auth/send-email-otp', async (req, res) => {
   } catch (err) {
     console.error('Error sending email OTP:', err);
     return res.status(500).json({
-      error: err.message || 'Failed to send verification email. Check SMTP settings.',
+      error: err.message || 'Failed to send OTP email',
       details: err.message
     });
   }
@@ -1474,8 +1506,8 @@ app.get('/api/services', async (req, res) => {
     const services = await getServicesWithDefaults();
     return res.status(200).json(services);
   } catch (err) {
-    console.error('Error loading services:', err);
-    return res.status(500).json({ error: err.message });
+    console.error('[services] Route failed unexpectedly. Returning default services fallback:', err);
+    return res.status(200).json(DEFAULT_SERVICES);
   }
 });
 
@@ -1515,16 +1547,52 @@ app.delete('/api/services/:id', verifyToken, verifyAdmin, async (req, res) => {
 
 app.get('/api/reviews', async (req, res) => {
   try {
-    const { data: reviews, error } = await supabase
-      .from('reviews')
-      .select('*')
-      .eq('status', 'approved')
-      .neq('active', false)
-      .order('created_at', { ascending: false });
-    if (error) throw error;
+    console.log('[reviews] Public reviews query started.');
+    let result = await withTimeout(
+      supabase
+        .from('reviews')
+        .select('*')
+        .eq('status', 'approved')
+        .neq('active', false)
+        .order('created_at', { ascending: false }),
+      8000,
+      'Supabase reviews query timed out.'
+    );
+
+    if (result.error && /status|active|schema cache|column/i.test(result.error.message || '')) {
+      console.error('[reviews] Filtered query failed, retrying without status/active filters:', {
+        message: result.error.message,
+        code: result.error.code,
+        details: result.error.details,
+        hint: result.error.hint
+      });
+      result = await withTimeout(
+        supabase.from('reviews').select('*').order('created_at', { ascending: false }),
+        8000,
+        'Supabase reviews fallback query timed out.'
+      );
+    }
+
+    if (result.error) {
+      console.error('[reviews] Supabase query failed. Returning empty reviews fallback:', {
+        message: result.error.message,
+        code: result.error.code,
+        details: result.error.details,
+        hint: result.error.hint
+      });
+      return res.status(200).json([]);
+    }
+
+    const reviews = (result.data || []).filter((review) => {
+      const statusOk = !('status' in review) || review.status === 'approved';
+      const activeOk = !('active' in review) || review.active !== false;
+      return statusOk && activeOk;
+    });
+
     return res.status(200).json(reviews);
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    console.error('[reviews] Public reviews route failed. Returning empty reviews fallback:', err);
+    return res.status(200).json([]);
   }
 });
 
