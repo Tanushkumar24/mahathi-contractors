@@ -7,7 +7,6 @@ import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import nodemailer from 'nodemailer';
 import multer from 'multer';
-import { CloudinaryStorage } from 'multer-storage-cloudinary';
 import cloudinary from './cloudinary.js';
 import { supabase } from './supabase.js';
 import { getLatestQr, getWhatsAppStatus, logoutWhatsApp, restartWhatsAppClient, sendWhatsApp } from './whatsapp.js';
@@ -36,21 +35,8 @@ function ensureCloudinaryConfigured() {
   }
 }
 
-const cloudinaryStorage = new CloudinaryStorage({
-  cloudinary,
-  params: async (req, file) => {
-    ensureCloudinaryConfigured();
-    const isVideo = file.mimetype.startsWith('video/');
-    return {
-      folder: 'mahathi-contractors',
-      resource_type: isVideo ? 'video' : 'image',
-      allowed_formats: isVideo ? ['mp4', 'webm'] : ['jpg', 'jpeg', 'png', 'webp', 'gif', 'avif']
-    };
-  }
-});
-
 const upload = multer({
-  storage: cloudinaryStorage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 100 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/')) {
@@ -64,6 +50,33 @@ const upload = multer({
 function getOptimizedCloudinaryUrl(url, resourceType) {
   if (!url || resourceType === 'video') return url;
   return url.replace('/upload/', '/upload/f_auto,q_auto/');
+}
+
+function uploadToCloudinary(file) {
+  ensureCloudinaryConfigured();
+
+  const resourceType = file.mimetype.startsWith('video/') ? 'video' : 'image';
+
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        folder: 'mahathi-contractors',
+        resource_type: resourceType,
+        allowed_formats: resourceType === 'video'
+          ? ['mp4', 'webm']
+          : ['jpg', 'jpeg', 'png', 'webp', 'gif', 'avif']
+      },
+      (error, result) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve(result);
+      }
+    );
+
+    stream.end(file.buffer);
+  });
 }
 
 const smtpPort = Number(process.env.SMTP_PORT || 587);
@@ -1145,9 +1158,10 @@ app.post('/api/admin/upload', verifyToken, verifyAdmin, upload.single('file'), a
       return res.status(400).json({ error: 'No file uploaded.' });
     }
 
-    const resourceType = req.file.mimetype?.startsWith('video/') ? 'video' : 'image';
-    const secureUrl = getOptimizedCloudinaryUrl(req.file.path, resourceType);
-    const publicId = req.file.filename;
+    const result = await uploadToCloudinary(req.file);
+    const resourceType = result.resource_type || (req.file.mimetype?.startsWith('video/') ? 'video' : 'image');
+    const secureUrl = getOptimizedCloudinaryUrl(result.secure_url, resourceType);
+    const publicId = result.public_id;
     const payload = {
       title: req.body.title || req.file.originalname,
       url: secureUrl,
