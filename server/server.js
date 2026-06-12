@@ -209,12 +209,13 @@ function projectPayloadFromBody(body = {}) {
 
 const smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com';
 const smtpPort = Number(process.env.SMTP_PORT || 587);
+const smtpSecure = String(process.env.SMTP_SECURE || '').toLowerCase() === 'true' || smtpPort === 465;
 const mailTransporter = process.env.SMTP_USER && process.env.SMTP_PASS
   ? nodemailer.createTransport({
       host: smtpHost,
       port: smtpPort,
-      secure: false,
-      requireTLS: true,
+      secure: smtpSecure,
+      requireTLS: !smtpSecure,
       connectionTimeout: 10000,
       greetingTimeout: 10000,
       socketTimeout: 10000,
@@ -229,8 +230,8 @@ if (mailTransporter) {
   console.log('[Email OTP] SMTP transporter created:', {
     host: smtpHost,
     port: smtpPort,
-    secure: false,
-    requireTLS: true,
+    secure: smtpSecure,
+    requireTLS: !smtpSecure,
     user: process.env.SMTP_USER
   });
 } else {
@@ -418,10 +419,6 @@ async function sendVerificationEmail(email, otp) {
   });
 
   try {
-    console.log('[Email OTP] SMTP transporter verify started.');
-    await withTimeout(mailTransporter.verify(), 5000, 'SMTP verify timeout');
-    console.log('[Email OTP] SMTP transporter verify success.');
-
     const mailOptions = {
       from: `"${fromName}" <${fromEmail}>`,
       to: email,
@@ -436,7 +433,7 @@ async function sendVerificationEmail(email, otp) {
       `
     };
 
-    console.log('[Email OTP] sendMail started.');
+    console.log('[Email OTP] SMTP verify skipped for request. sendMail started.');
     const sendMailPromise = mailTransporter.sendMail(mailOptions);
     const timeoutPromise = new Promise((_, reject) =>
       setTimeout(() => reject(new Error('SMTP timeout')), 10000)
