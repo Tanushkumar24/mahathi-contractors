@@ -462,11 +462,11 @@ async function sendVerificationEmail(email, otp) {
       `
     };
 
-    const sendWithTimeout = async (transporter, label) => {
+    const sendWithTimeout = async (transporter, label, timeoutMs = 4500) => {
       console.log(`[Email OTP] ${label} sendMail started.`);
       const sendMailPromise = transporter.sendMail(mailOptions);
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error(`${label} SMTP timeout`)), 10000)
+        setTimeout(() => reject(new Error(`${label} SMTP timeout`)), timeoutMs)
       );
       return Promise.race([sendMailPromise, timeoutPromise]);
     };
@@ -697,7 +697,11 @@ app.post('/api/auth/send-email-otp', async (req, res) => {
     }
 
     console.log('[Email OTP] Supabase OTP insert success. Sending email:', { email });
-    await sendVerificationEmail(email, otp);
+    await withTimeout(
+      sendVerificationEmail(email, otp),
+      10000,
+      'Email service timed out before sending OTP'
+    );
 
     console.log('[Email OTP] Route success:', { email });
     return res.status(200).json({
