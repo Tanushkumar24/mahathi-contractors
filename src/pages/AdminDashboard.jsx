@@ -465,7 +465,7 @@ function WhatsAppConnectionPanel() {
       setStatus(statusRes.data);
 
       if (withQr || (!statusRes.data.connected && statusRes.data.hasQr)) {
-        const qrRes = await api.get('/api/admin/whatsapp/qr');
+        const qrRes = await api.get(`/api/admin/whatsapp/qr${withQr ? '?refresh=true' : ''}`);
         setQr(qrRes.data.qr || '');
         setStatus(qrRes.data.status || statusRes.data);
       }
@@ -512,6 +512,7 @@ function WhatsAppConnectionPanel() {
           </p>
           {!status.connected && <p className="mt-2 text-xs text-yellow-300/80">WhatsApp not connected. Message not sent.</p>}
           {status.lastError && <p className="mt-2 text-xs text-red-300">{status.lastError}</p>}
+          {status.initializing && <p className="mt-2 text-xs text-white/35">Launching WhatsApp Web. This can take 30-90 seconds.</p>}
         </div>
         <div className="flex gap-2">
           <Button onClick={refreshQr} disabled={loading} variant="outline" className="rounded-xl border-white/10 text-white/60 gap-2">

@@ -19,6 +19,8 @@ let initializeAttempts = 0;
 let latestQr = null;
 let lastError = null;
 let lastDisconnectedReason = null;
+let initStartedAt = null;
+let initTimeout = null;
 
 const MODERN_CHROME_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36';
 
@@ -75,6 +77,7 @@ export function initWhatsAppClient() {
   }
 
   isInitializing = true;
+  initStartedAt = Date.now();
   lastError = null;
   console.log('[WhatsApp] Launching WhatsApp client...');
   console.log('[WhatsApp] QR will be available in Admin Dashboard > WhatsApp Connection.');
@@ -90,9 +93,20 @@ export function initWhatsAppClient() {
     puppeteer: getPuppeteerOptions()
   });
 
+  clearTimeout(initTimeout);
+  initTimeout = setTimeout(() => {
+    if (!isReady && !latestQr) {
+      isInitializing = false;
+      lastError = 'WhatsApp QR was not generated yet. Click Refresh QR to restart the connection.';
+      console.error('[WhatsApp] QR generation timed out.');
+    }
+  }, 120000);
+
   client.on('qr', (qr) => {
     latestQr = qr;
     isReady = false;
+    isInitializing = false;
+    clearTimeout(initTimeout);
     console.log('[WhatsApp] QR received. Open /admin to scan it from WhatsApp Connection.');
   });
 
@@ -103,6 +117,7 @@ export function initWhatsAppClient() {
   client.on('ready', () => {
     isReady = true;
     isInitializing = false;
+    clearTimeout(initTimeout);
     latestQr = null;
     lastError = null;
     console.log('[WhatsApp] Connected and ready to send messages.');
@@ -116,6 +131,7 @@ export function initWhatsAppClient() {
   client.on('auth_failure', (message) => {
     isReady = false;
     isInitializing = false;
+    clearTimeout(initTimeout);
     latestQr = null;
     lastError = message || 'Authentication failed';
     console.error('[WhatsApp] Auth failure:', message);
@@ -125,6 +141,7 @@ export function initWhatsAppClient() {
   client.on('disconnected', (reason) => {
     isReady = false;
     isInitializing = false;
+    clearTimeout(initTimeout);
     latestQr = null;
     lastDisconnectedReason = reason;
     client = null;
@@ -135,6 +152,7 @@ export function initWhatsAppClient() {
   client.initialize().catch(async (error) => {
     isReady = false;
     isInitializing = false;
+    clearTimeout(initTimeout);
     lastError = error?.message || String(error);
     console.error('[WhatsApp] Failed to initialize WhatsApp Web client:', error);
     console.error('[WhatsApp] Backend will continue running. If this is a browser database/session issue, run npm run whatsapp:reset and restart.');
@@ -157,6 +175,30 @@ export function initWhatsAppClient() {
   return client;
 }
 
+export async function restartWhatsAppClient() {
+  console.log('[WhatsApp] Restart requested from Admin Dashboard.');
+  try {
+    if (client) {
+      await client.destroy().catch((error) => {
+        console.error('[WhatsApp] Error while destroying client for restart:', error);
+      });
+    }
+  } finally {
+    isReady = false;
+    isInitializing = false;
+    latestQr = null;
+    lastError = null;
+    lastDisconnectedReason = null;
+    initializeAttempts = 0;
+    initStartedAt = null;
+    clearTimeout(initTimeout);
+    client = null;
+  }
+
+  initWhatsAppClient();
+  return getWhatsAppStatus({ start: false });
+}
+
 export function getWhatsAppStatus({ start = true } = {}) {
   if (start) {
     initWhatsAppClient();
@@ -166,7 +208,8 @@ export function getWhatsAppStatus({ start = true } = {}) {
     initializing: isInitializing,
     hasQr: Boolean(latestQr),
     lastError,
-    lastDisconnectedReason
+    lastDisconnectedReason,
+    initStartedAt
   };
 }
 

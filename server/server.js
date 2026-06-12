@@ -7,7 +7,7 @@ import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import nodemailer from 'nodemailer';
 import { supabase } from './supabase.js';
-import { getLatestQr, getWhatsAppStatus, logoutWhatsApp, sendWhatsApp } from './whatsapp.js';
+import { getLatestQr, getWhatsAppStatus, logoutWhatsApp, restartWhatsAppClient, sendWhatsApp } from './whatsapp.js';
 import { verifyToken, verifyAdmin } from './authMiddleware.js';
 import admin from './firebase-admin.js';
 
@@ -1219,6 +1219,11 @@ app.get('/api/admin/whatsapp/status', verifyToken, verifyAdmin, async (req, res)
 
 app.get('/api/admin/whatsapp/qr', verifyToken, verifyAdmin, async (req, res) => {
   try {
+    if (req.query.refresh === 'true') {
+      await restartWhatsAppClient();
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    }
+
     return res.status(200).json({
       qr: getLatestQr(),
       status: getWhatsAppStatus()
