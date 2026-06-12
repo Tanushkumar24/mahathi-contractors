@@ -105,10 +105,21 @@ export const AuthProvider = ({ children }) => {
 
   const sendEmailOtp = async ({ email, name }) => {
     const normalizedEmail = email.trim().toLowerCase();
-    await api.post('/api/auth/send-email-otp', {
+    const payload = {
       email: normalizedEmail,
       name: name || normalizedEmail.split('@')[0]
-    });
+    };
+    console.log('[Auth] Calling /api/auth/send-email-otp:', payload);
+    try {
+      const res = await api.post('/api/auth/send-email-otp', payload);
+      console.log('[Auth] Email OTP response:', res.data);
+    } catch (err) {
+      console.error('[Auth] Email OTP request failed:', err.response?.data || err.message, err);
+      if (err.code === 'ECONNABORTED') {
+        throw new Error('Email service is taking too long. Please try again.');
+      }
+      throw new Error(err.response?.data?.error || err.response?.data?.details || err.message || 'Failed to send verification email.');
+    }
     return { email: normalizedEmail };
   };
 
@@ -143,6 +154,12 @@ export const AuthProvider = ({ children }) => {
 
   const createAccount = async ({ fullName, email, password, mobileNumber }) => {
     const normalizedEmail = email.trim().toLowerCase();
+    console.log('[Auth] Create account started:', {
+      fullName,
+      email: normalizedEmail,
+      mobileNumber,
+      hasPassword: Boolean(password)
+    });
     await sendEmailOtp({ email: normalizedEmail, name: fullName });
     localStorage.setItem(`mbc_pending_signup_${normalizedEmail}`, JSON.stringify({
       name: fullName,

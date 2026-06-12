@@ -135,6 +135,12 @@ function uploadToCloudinary(file) {
   ensureCloudinaryConfigured();
 
   const resourceType = file.mimetype.startsWith('video/') ? 'video' : 'image';
+  console.log('[Cloudinary] Upload start:', {
+    originalname: file.originalname,
+    mimetype: file.mimetype,
+    size: file.size,
+    resourceType
+  });
 
   return new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
@@ -147,9 +153,15 @@ function uploadToCloudinary(file) {
       },
       (error, result) => {
         if (error) {
+          console.error('[Cloudinary] Upload failed:', error);
           reject(error);
           return;
         }
+        console.log('[Cloudinary] Upload success:', {
+          public_id: result.public_id,
+          resource_type: result.resource_type,
+          secure_url: result.secure_url
+        });
         resolve(result);
       }
     );
@@ -158,12 +170,32 @@ function uploadToCloudinary(file) {
   });
 }
 
+function projectPayloadFromBody(body = {}) {
+  return {
+    title: String(body.title || '').trim(),
+    client_name: String(body.client_name || '').trim() || null,
+    location: String(body.location || '').trim() || null,
+    category: String(body.category || 'Residential').trim(),
+    status: String(body.status || 'ongoing').trim(),
+    year: body.year ? String(body.year).trim() : null,
+    description: String(body.description || '').trim() || null,
+    progress_percent: Number(body.progress_percent || 0),
+    image_url: body.image_url || null,
+    image_urls: Array.isArray(body.image_urls) ? body.image_urls : [],
+    media_urls: Array.isArray(body.media_urls) ? body.media_urls : Array.isArray(body.image_urls) ? body.image_urls : [],
+    video_urls: Array.isArray(body.video_urls) ? body.video_urls : []
+  };
+}
+
 const smtpPort = Number(process.env.SMTP_PORT || 587);
 const mailTransporter = process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS
   ? nodemailer.createTransport({
       host: process.env.SMTP_HOST,
       port: smtpPort,
       secure: smtpPort === 465,
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 10000,
       auth: {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS
@@ -303,6 +335,14 @@ const normalizeEmail = (email) => (email || '').trim().toLowerCase();
 
 const generateEmailOtp = () => String(Math.floor(100000 + Math.random() * 900000));
 
+function withTimeout(promise, ms, message) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
 async function sendVerificationEmail(email, otp) {
   if (!mailTransporter) {
     console.error('[Email OTP] SMTP is not configured. Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM_NAME, and SMTP_FROM_EMAIL.');
@@ -311,20 +351,34 @@ async function sendVerificationEmail(email, otp) {
 
   const fromName = process.env.SMTP_FROM_NAME || 'Mahathi Contractors';
   const fromEmail = process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER;
-
-  await mailTransporter.sendMail({
-    from: `"${fromName}" <${fromEmail}>`,
+  console.log('[Email OTP] Send start:', {
     to: email,
-    subject: 'Your Mahathi Contractors verification code',
-    text: `Your verification code is ${otp}. It is valid for 10 minutes.`,
-    html: `
-      <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; color: #111827;">
-        <h2 style="margin-bottom: 8px;">Mahathi Contractors</h2>
-        <p>Your verification code is <strong style="font-size: 24px; letter-spacing: 4px;">${otp}</strong>.</p>
-        <p>It is valid for 10 minutes.</p>
-      </div>
-    `
+    host: process.env.SMTP_HOST,
+    port: smtpPort,
+    fromEmail,
+    fromName
   });
+
+  try {
+    await withTimeout(mailTransporter.verify(), 10000, 'SMTP verification timed out.');
+    const info = await withTimeout(mailTransporter.sendMail({
+      from: `"${fromName}" <${fromEmail}>`,
+      to: email,
+      subject: 'Your Mahathi Contractors verification code',
+      text: `Your verification code is ${otp}. It is valid for 10 minutes.`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; color: #111827;">
+          <h2 style="margin-bottom: 8px;">Mahathi Contractors</h2>
+          <p>Your verification code is <strong style="font-size: 24px; letter-spacing: 4px;">${otp}</strong>.</p>
+          <p>It is valid for 10 minutes.</p>
+        </div>
+      `
+    }), 10000, 'SMTP send timed out.');
+    console.log('[Email OTP] Send success:', { to: email, messageId: info.messageId, response: info.response });
+  } catch (err) {
+    console.error('[Email OTP] Send failed:', err);
+    throw new Error('Failed to send verification email. Check SMTP settings.');
+  }
 }
 
 async function hasVerifiedEmailOtp(email) {
@@ -477,14 +531,29 @@ async function createUserProfile(profile) {
 app.post('/api/auth/send-email-otp', async (req, res) => {
   const email = normalizeEmail(req.body.email);
   const name = req.body.name || email?.split('@')[0] || 'Customer';
+  console.log('[Email OTP] Route started:', {
+    email,
+    name,
+    smtpConfigured: Boolean(mailTransporter),
+    smtpHost: process.env.SMTP_HOST,
+    smtpPort
+  });
 
   if (!email) {
     return res.status(400).json({ error: 'Email is required.' });
   }
 
   try {
+    console.log('[Email OTP] Checking existing user profile:', { email });
+    const existingUser = await findUserProfileByEmail(email);
+    if (existingUser.error) {
+      console.error('[Email OTP] User existence check failed:', existingUser.error);
+      return res.status(500).json({ error: 'Failed to check user profile.', details: existingUser.error.message });
+    }
+
     const otp = generateEmailOtp();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+    console.log('[Email OTP] OTP generated and inserting record:', { email, expiresAt });
 
     const { error } = await supabase
       .from('email_otps')
@@ -496,10 +565,15 @@ app.post('/api/auth/send-email-otp', async (req, res) => {
         attempts: 0
       });
 
-    if (error) throw error;
+    if (error) {
+      console.error('[Email OTP] Supabase OTP insert failed:', error);
+      return res.status(500).json({ error: 'Failed to create verification code.', details: error.message });
+    }
 
+    console.log('[Email OTP] Supabase OTP insert success. Sending email:', { email });
     await sendVerificationEmail(email, otp);
 
+    console.log('[Email OTP] Route success:', { email });
     return res.status(200).json({
       message: 'Verification code sent.',
       email,
@@ -507,7 +581,10 @@ app.post('/api/auth/send-email-otp', async (req, res) => {
     });
   } catch (err) {
     console.error('Error sending email OTP:', err);
-    return res.status(500).json({ error: err.message || 'Failed to send verification email.' });
+    return res.status(500).json({
+      error: err.message || 'Failed to send verification email. Check SMTP settings.',
+      details: err.message
+    });
   }
 });
 
@@ -1233,6 +1310,11 @@ app.get('/api/projects', async (req, res) => {
 
 app.post('/api/admin/upload', verifyToken, verifyAdmin, upload.single('file'), async (req, res) => {
   try {
+    console.log('[media] Upload request received:', {
+      admin: req.user?.email,
+      hasFile: Boolean(req.file),
+      body: req.body
+    });
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded.' });
     }
@@ -1306,22 +1388,69 @@ app.delete('/api/admin/media/:id', verifyToken, verifyAdmin, async (req, res) =>
 
 app.post('/api/projects', verifyToken, verifyAdmin, async (req, res) => {
   try {
-    const { data, error } = await supabase.from('projects').insert(req.body).select();
-    if (error) throw error;
+    console.log('[projects] Create request:', {
+      admin: req.user?.email,
+      role: req.user?.role,
+      body: req.body
+    });
+
+    const payload = projectPayloadFromBody(req.body);
+    if (!payload.title) {
+      return res.status(400).json({ error: 'Project title is required.' });
+    }
+
+    console.log('[projects] Insert payload:', payload);
+    let { data, error } = await supabase.from('projects').insert(payload).select();
+
+    if (error && /year/i.test(error.message || '')) {
+      console.warn('[projects] Retrying insert without year column:', error);
+      const { year: _year, ...fallbackPayload } = payload;
+      const fallback = await supabase.from('projects').insert(fallbackPayload).select();
+      data = fallback.data;
+      error = fallback.error;
+    }
+
+    if (error) {
+      console.error('[projects] Supabase insert error:', error);
+      return res.status(500).json({ error: 'Failed to create project.', details: error.message });
+    }
+
+    console.log('[projects] Insert success:', data?.[0]);
     return res.status(201).json(data[0]);
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    console.error('[projects] Create route failed:', err);
+    return res.status(500).json({ error: 'Failed to create project.', details: err.message });
   }
 });
 
 app.put('/api/projects/:id', verifyToken, verifyAdmin, async (req, res) => {
   const { id } = req.params;
   try {
-    const { data, error } = await supabase.from('projects').update(req.body).eq('id', id).select();
-    if (error) throw error;
+    console.log('[projects] Update request:', {
+      admin: req.user?.email,
+      role: req.user?.role,
+      id,
+      body: req.body
+    });
+    const payload = projectPayloadFromBody(req.body);
+    let { data, error } = await supabase.from('projects').update(payload).eq('id', id).select();
+
+    if (error && /year/i.test(error.message || '')) {
+      console.warn('[projects] Retrying update without year column:', error);
+      const { year: _year, ...fallbackPayload } = payload;
+      const fallback = await supabase.from('projects').update(fallbackPayload).eq('id', id).select();
+      data = fallback.data;
+      error = fallback.error;
+    }
+
+    if (error) {
+      console.error('[projects] Supabase update error:', error);
+      return res.status(500).json({ error: 'Failed to update project.', details: error.message });
+    }
     return res.status(200).json(data[0]);
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    console.error('[projects] Update route failed:', err);
+    return res.status(500).json({ error: 'Failed to update project.', details: err.message });
   }
 });
 

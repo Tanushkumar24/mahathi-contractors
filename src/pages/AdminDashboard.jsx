@@ -30,6 +30,7 @@ const emptyProjectForm = {
   category: 'Residential',
   location: '',
   status: 'ongoing',
+  year: new Date().getFullYear().toString(),
   progress_percent: 0,
   description: '',
   client_name: '',
@@ -341,9 +342,24 @@ function ProjectsPage() {
   const [editProject, setEditProject] = useState(null);
   const [form, setForm] = useState(emptyProjectForm);
   const [uploading, setUploading] = useState('');
+  const [savingProject, setSavingProject] = useState(false);
+
+  const loadProjects = async () => {
+    try {
+      setLoading(true);
+      const res = await api.get('/api/projects');
+      console.log('[Admin Projects] Loaded projects:', res.data);
+      setProjects(res.data || []);
+    } catch (err) {
+      console.error('[Admin Projects] Failed to load projects:', err.response?.data || err.message, err);
+      toast.error(err.response?.data?.error || 'Failed to load projects.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    api.get('/api/projects').then(res => { setProjects(res.data); setLoading(false); });
+    loadProjects();
   }, []);
 
   const resetProjectForm = () => {
@@ -353,22 +369,45 @@ function ProjectsPage() {
   };
 
   const saveProject = async () => {
+    if (!form.title?.trim()) {
+      toast.error('Project title is required.');
+      return;
+    }
+
     const payload = {
       ...form,
+      title: form.title.trim(),
+      client_name: form.client_name?.trim() || '',
+      location: form.location?.trim() || '',
+      category: form.category || 'Residential',
+      status: form.status || 'ongoing',
+      year: form.year?.toString().trim() || new Date().getFullYear().toString(),
+      description: form.description?.trim() || '',
+      progress_percent: Number(form.progress_percent || 0),
       image_urls: normalizeArray(form.image_urls),
       video_urls: normalizeArray(form.video_urls)
     };
 
-    if (editProject) {
-      const res = await api.put(`/api/projects/${editProject.id}`, payload);
-      setProjects(prev => prev.map(p => p.id === editProject.id ? res.data : p));
-      toast.success('Project updated.');
-    } else {
-      const res = await api.post('/api/projects', payload);
-      setProjects(prev => [res.data, ...prev]);
-      toast.success('Project added.');
+    console.log('[Admin Projects] Saving project payload:', payload);
+    setSavingProject(true);
+    try {
+      if (editProject) {
+        const res = await api.put(`/api/projects/${editProject.id}`, payload);
+        console.log('[Admin Projects] Update response:', res.data);
+        toast.success('Project updated.');
+      } else {
+        const res = await api.post('/api/projects', payload);
+        console.log('[Admin Projects] Create response:', res.data);
+        toast.success('Project added.');
+      }
+      resetProjectForm();
+      await loadProjects();
+    } catch (err) {
+      console.error('[Admin Projects] Save failed:', err.response?.data || err.message, err);
+      toast.error(err.response?.data?.error || err.response?.data?.details || 'Project save failed.');
+    } finally {
+      setSavingProject(false);
     }
-    resetProjectForm();
   };
 
   const deleteProject = async (id) => {
@@ -393,7 +432,9 @@ function ProjectsPage() {
     if (!file) return;
     setUploading(file.type.startsWith('video/') ? 'video' : 'image');
     try {
+      console.log('[Admin Projects] Uploading project media:', { name: file.name, type: file.type, size: file.size });
       const uploaded = await uploadAdminFile(file, { linked_type: 'project', linked_id: editProject?.id });
+      console.log('[Admin Projects] Upload response:', uploaded);
       if (uploaded.resource_type === 'video') {
         setForm(prev => ({ ...prev, video_urls: [...normalizeArray(prev.video_urls), uploaded.secure_url || uploaded.url] }));
         } else {
@@ -402,6 +443,7 @@ function ProjectsPage() {
         }
       toast.success('Media uploaded.');
     } catch (err) {
+      console.error('[Admin Projects] Upload failed:', err.response?.data || err.message, err);
       toast.error(err.response?.data?.error || 'Upload failed.');
     } finally {
       setUploading('');
@@ -424,6 +466,7 @@ function ProjectsPage() {
             <input placeholder="Project Title *" value={form.title} onChange={e => setForm({...form, title: e.target.value})} className="glass rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-white/30 border border-white/5 focus:border-blue-500/30 focus:outline-none bg-transparent" />
             <input placeholder="Client Name" value={form.client_name} onChange={e => setForm({...form, client_name: e.target.value})} className="glass rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-white/30 border border-white/5 focus:outline-none bg-transparent" />
             <input placeholder="Location" value={form.location} onChange={e => setForm({...form, location: e.target.value})} className="glass rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-white/30 border border-white/5 focus:outline-none bg-transparent" />
+            <input placeholder="Year" value={form.year || ''} onChange={e => setForm({...form, year: e.target.value})} className="glass rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-white/30 border border-white/5 focus:outline-none bg-transparent" />
             <select value={form.category} onChange={e => setForm({...form, category: e.target.value})} className="glass rounded-xl px-4 py-2.5 text-sm text-white/70 border border-white/5 focus:outline-none bg-transparent">
               {['Residential','Commercial','Interior','Villa','Renovation'].map(c => <option key={c} value={c} className="bg-[#0A0E1A]">{c}</option>)}
             </select>
@@ -451,7 +494,9 @@ function ProjectsPage() {
             </div>
           </div>
           <div className="flex gap-3">
-            <Button onClick={saveProject} disabled={!form.title} className="bg-blue-600 hover:bg-blue-500 text-white rounded-xl">Save</Button>
+            <Button onClick={saveProject} disabled={!form.title || savingProject} className="bg-blue-600 hover:bg-blue-500 text-white rounded-xl">
+              {savingProject ? 'Saving project...' : 'Save'}
+            </Button>
             <Button variant="outline" onClick={resetProjectForm} className="border-white/10 text-white/60 rounded-xl">Cancel</Button>
           </div>
         </div>

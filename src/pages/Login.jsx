@@ -116,6 +116,12 @@ export default function Login() {
 
     setLoading("create");
     try {
+      console.log('[Login] Create account submit:', {
+        fullName: form.fullName.trim(),
+        email: form.email.trim().toLowerCase(),
+        mobileNumber: `+91${form.mobileNumber}`,
+        hasPassword: Boolean(form.password)
+      });
       await createAccount({
         fullName: form.fullName.trim(),
         email: form.email.trim(),
@@ -125,7 +131,8 @@ export default function Login() {
       showOtpScreen({ context: "signup", email: form.email });
       toast.success("Verification code sent.");
     } catch (err) {
-      toast.error(err.message || "Account creation failed. Please try again.");
+      console.error('[Login] Create account failed:', err);
+      toast.error(err.message || "Email service is taking too long. Please try again.");
     } finally {
       setLoading("");
     }
