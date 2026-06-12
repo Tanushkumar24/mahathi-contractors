@@ -236,26 +236,26 @@ const getMissingProjectColumns = (error) => {
 const smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com';
 const smtpPort = Number(process.env.SMTP_PORT || 587);
 const smtpSecure = String(process.env.SMTP_SECURE || '').toLowerCase() === 'true' || smtpPort === 465;
-const createSmtpTransporter = ({ port = smtpPort, secure = smtpSecure } = {}) =>
+let smtpStartupError = null;
+
+const createSmtpTransporter = ({ port = smtpPort, secure = smtpSecure, timeoutMs = 6000 } = {}) =>
   nodemailer.createTransport({
     host: smtpHost,
     port,
     secure,
     requireTLS: !secure,
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 10000,
+    connectionTimeout: timeoutMs,
+    greetingTimeout: timeoutMs,
+    socketTimeout: timeoutMs,
     auth: {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS
     }
   });
 
-const mailTransporter = process.env.SMTP_USER && process.env.SMTP_PASS
-  ? createSmtpTransporter()
-  : null;
+const isSmtpConfigured = Boolean(process.env.SMTP_USER && process.env.SMTP_PASS);
 
-if (mailTransporter) {
+if (isSmtpConfigured) {
   console.log('[Email OTP] SMTP transporter created:', {
     host: smtpHost,
     port: smtpPort,
@@ -419,20 +419,26 @@ function formatEmailError(error) {
   return parts.length ? parts.join(' | ') : 'Failed to send OTP';
 }
 
-if (mailTransporter) {
+if (isSmtpConfigured) {
   console.log('[Email OTP] Startup SMTP verify started.');
-  withTimeout(mailTransporter.verify(), 10000, 'Startup SMTP verification timed out.')
+  const verifyTransporter = createSmtpTransporter({ timeoutMs: 5000 });
+  withTimeout(verifyTransporter.verify(), 6000, 'Startup SMTP verification timed out.')
     .then(() => {
+      smtpStartupError = null;
       console.log('[Email OTP] Startup SMTP verify success.');
     })
     .catch((error) => {
+      smtpStartupError = error;
       console.error('[Email OTP] Startup SMTP verify failed:', error);
       console.error('[Email OTP] If using Gmail, confirm SMTP_USER is the Gmail address and SMTP_PASS is a Gmail App Password.');
+    })
+    .finally(() => {
+      verifyTransporter.close?.();
     });
 }
 
 async function sendVerificationEmail(email, otp) {
-  if (!mailTransporter) {
+  if (!isSmtpConfigured) {
     console.error('[Email OTP] SMTP is not configured. Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM_NAME, and SMTP_FROM_EMAIL.');
     throw new Error('Email service is not configured.');
   }
@@ -462,26 +468,56 @@ async function sendVerificationEmail(email, otp) {
       `
     };
 
-    const sendWithTimeout = async (transporter, label, timeoutMs = 4500) => {
+    const sendWithTimeout = async ({ port, secure, label, timeoutMs = 4000 }) => {
+      const transporter = createSmtpTransporter({ port, secure, timeoutMs });
       console.log(`[Email OTP] ${label} sendMail started.`);
       const sendMailPromise = transporter.sendMail(mailOptions);
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error(`${label} SMTP timeout`)), timeoutMs)
-      );
-      return Promise.race([sendMailPromise, timeoutPromise]);
+      let timer;
+      const timeoutPromise = new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          transporter.close?.();
+          reject(new Error(`${label} SMTP timeout`));
+        }, timeoutMs);
+      });
+
+      try {
+        return await Promise.race([sendMailPromise, timeoutPromise]);
+      } finally {
+        clearTimeout(timer);
+        transporter.close?.();
+      }
     };
 
     console.log('[Email OTP] SMTP verify skipped for request.');
-    let info;
-    try {
-      info = await sendWithTimeout(mailTransporter, `primary:${smtpPort}`);
-    } catch (primaryError) {
-      const shouldTryGmail465 = smtpHost === 'smtp.gmail.com' && smtpPort !== 465 && /timeout|ETIMEDOUT|ESOCKET/i.test(formatEmailError(primaryError));
-      if (!shouldTryGmail465) throw primaryError;
-      console.error('[Email OTP] Primary SMTP send failed, retrying Gmail port 465:', formatEmailError(primaryError));
-      const fallbackTransporter = createSmtpTransporter({ port: 465, secure: true });
-      info = await sendWithTimeout(fallbackTransporter, 'fallback:465');
+    const attempts = [];
+    const startupTimedOut = /timeout/i.test(formatEmailError(smtpStartupError));
+
+    if (!(smtpHost === 'smtp.gmail.com' && smtpPort === 587 && startupTimedOut)) {
+      attempts.push({ port: smtpPort, secure: smtpSecure, label: `primary:${smtpPort}` });
+    } else {
+      console.warn('[Email OTP] Skipping Gmail 587 because startup verification timed out. Trying 465 directly.');
     }
+
+    if (smtpHost === 'smtp.gmail.com' && smtpPort !== 465) {
+      attempts.push({ port: 465, secure: true, label: 'fallback:465' });
+    }
+
+    let info;
+    let lastError;
+    for (const attempt of attempts) {
+      try {
+        info = await sendWithTimeout(attempt);
+        break;
+      } catch (attemptError) {
+        lastError = attemptError;
+        console.error(`[Email OTP] ${attempt.label} send failed:`, formatEmailError(attemptError));
+      }
+    }
+
+    if (!info) {
+      throw lastError || new Error('Failed to send OTP email.');
+    }
+
     console.log('[Email OTP] Send success:', { to: email, messageId: info.messageId, response: info.response });
   } catch (err) {
     const formattedError = formatEmailError(err);
@@ -650,7 +686,7 @@ app.post('/api/auth/send-email-otp', async (req, res) => {
   console.log('[Email OTP] Route entered:', {
     email,
     name,
-    smtpConfigured: Boolean(mailTransporter),
+    smtpConfigured: isSmtpConfigured,
     smtpHost,
     smtpPort
   });
@@ -699,7 +735,7 @@ app.post('/api/auth/send-email-otp', async (req, res) => {
     console.log('[Email OTP] Supabase OTP insert success. Sending email:', { email });
     await withTimeout(
       sendVerificationEmail(email, otp),
-      10000,
+      9000,
       'Email service timed out before sending OTP'
     );
 
