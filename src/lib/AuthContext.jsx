@@ -113,8 +113,17 @@ export const AuthProvider = ({ children }) => {
     try {
       const res = await api.post('/api/auth/send-email-otp', payload);
       console.log('[Auth] Email OTP response:', res.data);
+      console.log('[Auth] Email OTP backend markers:', {
+        emailProvider: res.data?.emailProvider || res.headers?.['x-email-provider'],
+        sender: res.data?.sender || res.headers?.['x-email-sender'],
+        emailVersion: res.data?.emailVersion || res.headers?.['x-backend-email-version']
+      });
     } catch (err) {
-      console.error('[Auth] Email OTP request failed:', err.response?.data || err.message, err);
+      console.error('[Auth] Email OTP request failed:', err.response?.data || err.message, {
+        emailProvider: err.response?.data?.emailProvider || err.response?.headers?.['x-email-provider'],
+        sender: err.response?.data?.sender || err.response?.headers?.['x-email-sender'],
+        emailVersion: err.response?.data?.emailVersion || err.response?.headers?.['x-backend-email-version']
+      }, err);
       if (err.code === 'ECONNABORTED') {
         throw new Error('Email service is taking too long. Please try again.');
       }

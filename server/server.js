@@ -259,6 +259,12 @@ const createSmtpTransporter = ({ port = smtpPort, secure = smtpSecure, timeoutMs
 
 const isSmtpConfigured = Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
 const isEmailConfigured = Boolean(isSmtpConfigured || hasResendConfig || hasBrevoConfig);
+const getEmailProviderName = () => {
+  if (hasResendConfig) return 'resend';
+  if (hasBrevoConfig) return 'brevo';
+  if (isSmtpConfigured) return 'smtp';
+  return 'none';
+};
 
 if (hasResendConfig) {
   console.log('[Email OTP] Resend API configured. OTP emails will prefer HTTPS delivery.');
@@ -781,10 +787,17 @@ async function createUserProfile(profile) {
 app.post('/api/auth/send-email-otp', async (req, res) => {
   const email = normalizeEmail(req.body.email);
   const name = req.body.name || email?.split('@')[0] || 'Customer';
+  const configuredSender = process.env.SMTP_FROM_EMAIL || '';
+  const configuredProvider = getEmailProviderName();
+  res.setHeader('X-Email-Provider', configuredProvider);
+  res.setHeader('X-Email-Sender', configuredSender);
+  res.setHeader('X-Backend-Email-Version', 'resend-smtp-from-env-v2');
   console.log('[Email OTP] Route entered:', {
     email,
     name,
     smtpConfigured: isSmtpConfigured,
+    emailProvider: configuredProvider,
+    sender: configuredSender,
     smtpHost,
     smtpPort
   });
@@ -841,7 +854,10 @@ app.post('/api/auth/send-email-otp', async (req, res) => {
     return res.status(200).json({
       message: 'Verification code sent.',
       email,
-      name
+      name,
+      emailProvider: configuredProvider,
+      sender: configuredSender,
+      emailVersion: 'resend-smtp-from-env-v2'
     });
   } catch (error) {
     const formattedError = formatEmailError(error);
@@ -855,7 +871,10 @@ app.post('/api/auth/send-email-otp', async (req, res) => {
     });
     return res.status(500).json({
       error: formattedError,
-      details: formattedError
+      details: formattedError,
+      emailProvider: configuredProvider,
+      sender: configuredSender,
+      emailVersion: 'resend-smtp-from-env-v2'
     });
   }
 });
