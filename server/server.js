@@ -7,6 +7,7 @@ import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import nodemailer from 'nodemailer';
 import multer from 'multer';
+import { Resend } from 'resend';
 import cloudinary from './cloudinary.js';
 import { supabase } from './supabase.js';
 import { verifyToken, verifyAdmin } from './authMiddleware.js';
@@ -239,6 +240,7 @@ const smtpSecure = String(process.env.SMTP_SECURE || '').toLowerCase() === 'true
 let smtpStartupError = null;
 const hasResendConfig = Boolean(process.env.RESEND_API_KEY);
 const hasBrevoConfig = Boolean(process.env.BREVO_API_KEY);
+const resend = hasResendConfig ? new Resend(process.env.RESEND_API_KEY) : null;
 
 const createSmtpTransporter = ({ port = smtpPort, secure = smtpSecure, timeoutMs = 6000 } = {}) =>
   nodemailer.createTransport({
@@ -463,33 +465,24 @@ async function readProviderError(response) {
 
 async function sendEmailViaResend({ email, subject, text, html, fromName, fromEmail }) {
   console.log('[Email OTP] Resend send started:', { to: email, fromEmail });
-  const response = await withTimeout(
-    fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        from: `${fromName} <${fromEmail}>`,
-        to: [email],
-        subject,
-        text,
-        html
-      })
+  const result = await withTimeout(
+    resend.emails.send({
+      from: `${fromName} <${fromEmail}>`,
+      to: [email],
+      subject,
+      text,
+      html
     }),
     8000,
     'Resend API timeout'
   );
 
-  if (!response.ok) {
-    const details = await readProviderError(response);
-    throw new Error(`Resend API failed: ${details}`);
+  if (result.error) {
+    throw new Error(`Resend API failed: ${result.error.message || JSON.stringify(result.error)}`);
   }
 
-  const data = await response.json().catch(() => ({}));
-  console.log('[Email OTP] Resend send success:', { to: email, id: data.id });
-  return data;
+  console.log('[Email OTP] Resend send success:', { to: email, id: result.data?.id });
+  return result.data;
 }
 
 async function sendEmailViaBrevo({ email, subject, text, html, fromName, fromEmail }) {

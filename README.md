@@ -105,7 +105,7 @@ RESEND_API_KEY=your_resend_api_key
 # or
 BREVO_API_KEY=your_brevo_api_key
 SMTP_FROM_NAME=Mahathi Contractors
-SMTP_FROM_EMAIL=no-reply@mahathicontractors.in
+SMTP_FROM_EMAIL=onboarding@resend.dev
 
 # Optional SMTP fallback
 SMTP_HOST=smtp.example.com
