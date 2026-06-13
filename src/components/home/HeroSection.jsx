@@ -19,7 +19,7 @@ const heroStats = [
 
 export default function HeroSection() {
   return (
-    <section className="relative min-h-screen flex items-center overflow-hidden">
+    <section className="relative flex min-h-[92svh] items-center overflow-hidden lg:min-h-screen">
       {/* Background */}
       <div className="absolute inset-0">
         <div className="absolute inset-0 bg-gradient-to-br from-[#090B10] via-[#111827] to-[#0B1220]" />
@@ -30,15 +30,15 @@ export default function HeroSection() {
         }} />
       </div>
 
-      <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-32 pb-20 w-full">
-        <div className="grid lg:grid-cols-2 gap-12 items-center">
+      <div className="relative mx-auto w-full max-w-7xl px-4 pb-14 pt-28 sm:px-6 sm:pt-32 lg:px-8 lg:pb-20">
+        <div className="grid items-center gap-10 lg:grid-cols-2 lg:gap-12">
           {/* Left Content */}
           <div>
             <motion.div
               initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6 }}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-amber-500/10 border border-amber-500/20 mb-8"
+              className="mb-5 inline-flex items-center gap-2 rounded-full border border-amber-500/20 bg-amber-500/10 px-3 py-2 sm:mb-8 sm:px-4"
             >
               <span className="w-2 h-2 rounded-full bg-amber-300 animate-pulse" />
               <span className="text-xs font-medium text-amber-200 tracking-wide">Mahathi Building Contractors - Since 2020</span>
@@ -48,12 +48,12 @@ export default function HeroSection() {
               initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.1 }}
-              className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-extrabold text-white font-heading leading-[1.05] tracking-tight"
+              className="font-heading text-[2.35rem] font-extrabold leading-[1.08] tracking-tight text-white sm:text-5xl md:text-6xl lg:text-7xl"
             >
               Trusted construction
-              <br />
+              <br className="hidden sm:block" />
               <span className="text-gradient">for Vijayawada homes.</span>
-              <br />
+              <br className="hidden sm:block" />
               <span className="text-white/90">Built with care.</span>
             </motion.h1>
 
@@ -61,7 +61,7 @@ export default function HeroSection() {
               initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.2 }}
-              className="text-base md:text-lg text-white/40 mt-6 max-w-lg leading-relaxed"
+              className="mt-5 max-w-lg text-sm leading-7 text-white/45 sm:text-base md:text-lg"
             >
               Residential construction, renovation, interiors, painting, plumbing, electrical, waterproofing, and maintenance with transparent pricing and reliable handover.
             </motion.p>
@@ -71,21 +71,21 @@ export default function HeroSection() {
               initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.3 }}
-              className="flex flex-wrap gap-3 mt-8"
+              className="mt-7 grid gap-3 sm:flex sm:flex-wrap"
             >
               <Link to="/book">
-                <Button size="lg" className="bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white border-0 rounded-2xl px-6 h-12 text-sm font-semibold shadow-2xl shadow-blue-500/25 gap-2 group">
+                <Button size="lg" className="group h-12 w-full rounded-2xl border-0 bg-gradient-to-r from-blue-600 to-blue-500 px-6 text-sm font-semibold text-white shadow-2xl shadow-blue-500/25 hover:from-blue-500 hover:to-blue-400 sm:w-auto">
                   <Calendar className="w-4 h-4" /> Book Now
                   <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                 </Button>
               </Link>
               <Link to="/book">
-                <Button size="lg" variant="outline" className="border-white/10 text-white/70 hover:text-white hover:bg-white/5 rounded-2xl px-6 h-12 text-sm font-semibold gap-2">
+                <Button size="lg" variant="outline" className="h-12 w-full rounded-2xl border-white/10 px-6 text-sm font-semibold text-white/70 hover:bg-white/5 hover:text-white sm:w-auto">
                   <ClipboardList className="w-4 h-4" /> Book Site Visit
                 </Button>
               </Link>
               <Link to="/contact">
-                <Button size="lg" variant="outline" className="border-green-500/30 text-green-400 hover:bg-green-500/10 rounded-2xl px-6 h-12 text-sm font-semibold gap-2">
+                <Button size="lg" variant="outline" className="h-12 w-full rounded-2xl border-green-500/30 px-6 text-sm font-semibold text-green-400 hover:bg-green-500/10 sm:w-auto">
                   <MessageCircle className="w-4 h-4" /> Get Free Quote
                 </Button>
               </Link>
@@ -95,11 +95,11 @@ export default function HeroSection() {
               initial={{ opacity: 0, y: 24 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.35 }}
-              className="mt-8 grid max-w-xl grid-cols-3 gap-3"
+              className="mt-7 grid max-w-xl grid-cols-3 gap-2 sm:gap-3"
             >
               {heroStats.map(([label, value]) => (
-                <div key={label} className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-                  <p className="text-lg font-bold text-white md:text-2xl">{value}</p>
+                <div key={label} className="rounded-2xl border border-white/10 bg-white/[0.04] p-3 sm:p-4">
+                  <p className="text-base font-bold text-white sm:text-lg md:text-2xl">{value}</p>
                   <p className="mt-1 text-[11px] leading-4 text-white/40">{label}</p>
                 </div>
               ))}
@@ -109,7 +109,7 @@ export default function HeroSection() {
               initial={{ opacity: 0, y: 24 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.4 }}
-              className="mt-8 grid grid-cols-2 gap-3 sm:max-w-xl"
+              className="mt-7 grid grid-cols-1 gap-2 sm:max-w-xl sm:grid-cols-2 sm:gap-3"
             >
               {trustPoints.map((item) => (
                 <div key={item.label} className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-3 text-sm text-white/70">

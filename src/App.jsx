@@ -21,6 +21,7 @@ const ServiceDetail = lazy(() => import('./pages/ServiceDetail'));
 const ServiceLocation = lazy(() => import('./pages/ServiceLocation'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
+const Profile = lazy(() => import('./pages/Profile'));
 
 function LoadingScreen() {
   return (
@@ -62,6 +63,7 @@ const AuthenticatedApp = () => {
           <Route path="/book" element={<Book />} />
           <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />} />}>
             <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/profile" element={<Profile />} />
           </Route>
         </Route>
 
