@@ -234,15 +234,13 @@ const getMissingProjectColumns = (error) => {
   return missingColumns;
 };
 
-const smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com';
+const smtpHost = process.env.SMTP_HOST;
 const smtpPort = Number(process.env.SMTP_PORT || 587);
 const smtpSecure = String(process.env.SMTP_SECURE || '').toLowerCase() === 'true' || smtpPort === 465;
-let smtpStartupError = null;
 const hasResendConfig = Boolean(process.env.RESEND_API_KEY);
 const hasBrevoConfig = Boolean(process.env.BREVO_API_KEY);
 const resend = hasResendConfig ? new Resend(process.env.RESEND_API_KEY) : null;
-const emailFromName = process.env.SMTP_FROM_NAME || 'Mahathi Contractors';
-const emailFromAddress = process.env.SMTP_FROM_EMAIL || process.env.RESEND_FROM_EMAIL || process.env.BREVO_FROM_EMAIL || process.env.SMTP_USER;
+const emailFromName = process.env.SMTP_FROM_NAME;
 
 const createSmtpTransporter = ({ port = smtpPort, secure = smtpSecure, timeoutMs = 6000 } = {}) =>
   nodemailer.createTransport({
@@ -259,12 +257,12 @@ const createSmtpTransporter = ({ port = smtpPort, secure = smtpSecure, timeoutMs
     }
   });
 
-const isSmtpConfigured = Boolean(process.env.SMTP_USER && process.env.SMTP_PASS);
+const isSmtpConfigured = Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
 const isEmailConfigured = Boolean(isSmtpConfigured || hasResendConfig || hasBrevoConfig);
 
 if (hasResendConfig) {
   console.log('[Email OTP] Resend API configured. OTP emails will prefer HTTPS delivery.');
-  console.log(`[Resend] Using sender: ${emailFromAddress || 'SMTP_FROM_EMAIL is not set'}`);
+  console.log(`[Resend] Using sender: ${process.env.SMTP_FROM_EMAIL || 'SMTP_FROM_EMAIL is not set'}`);
 }
 
 if (hasBrevoConfig) {
@@ -280,7 +278,7 @@ if (isSmtpConfigured) {
     user: process.env.SMTP_USER
   });
 } else {
-  console.error('[Email OTP] SMTP transporter not created. SMTP_USER and SMTP_PASS are required.');
+  console.error('[Email OTP] SMTP transporter not created. SMTP_HOST, SMTP_USER, and SMTP_PASS are required for SMTP fallback.');
 }
 
 // Security: HTTP headers protection
@@ -441,11 +439,9 @@ if (isSmtpConfigured) {
   const verifyTransporter = createSmtpTransporter({ timeoutMs: 5000 });
   withTimeout(verifyTransporter.verify(), 6000, 'Startup SMTP verification timed out.')
     .then(() => {
-      smtpStartupError = null;
       console.log('[Email OTP] Startup SMTP verify success.');
     })
     .catch((error) => {
-      smtpStartupError = error;
       console.error('[Email OTP] Startup SMTP verify failed:', error);
       console.error('[Email OTP] If using Gmail, confirm SMTP_USER is the Gmail address and SMTP_PASS is a Gmail App Password.');
     })
@@ -468,9 +464,10 @@ async function readProviderError(response) {
 
 async function sendEmailViaResend({ email, subject, text, html, fromName, fromEmail }) {
   console.log('[Email OTP] Resend send started:', { to: email, fromEmail });
+  console.log('[Resend] Final sender:', process.env.SMTP_FROM_EMAIL);
   const result = await withTimeout(
     resend.emails.send({
-      from: `${fromName} <${fromEmail}>`,
+      from: `${process.env.SMTP_FROM_NAME} <${process.env.SMTP_FROM_EMAIL}>`,
       to: [email],
       subject,
       text,
@@ -527,7 +524,11 @@ async function sendVerificationEmail(email, otp) {
   }
 
   const fromName = emailFromName;
-  const fromEmail = emailFromAddress;
+  const fromEmail = process.env.SMTP_FROM_EMAIL;
+
+  if (!fromName) {
+    throw new Error('SMTP_FROM_NAME is required for OTP email sending.');
+  }
 
   if (!fromEmail) {
     throw new Error('SMTP_FROM_EMAIL is required for OTP email sending.');
@@ -568,7 +569,7 @@ async function sendVerificationEmail(email, otp) {
     }
 
     const mailOptions = {
-      from: `"${fromName}" <${fromEmail}>`,
+      from: `${process.env.SMTP_FROM_NAME} <${process.env.SMTP_FROM_EMAIL}>`,
       to: email,
       subject,
       text,
@@ -597,17 +598,7 @@ async function sendVerificationEmail(email, otp) {
 
     console.log('[Email OTP] SMTP verify skipped for request.');
     const attempts = [];
-    const startupTimedOut = /timeout/i.test(formatEmailError(smtpStartupError));
-
-    if (!(smtpHost === 'smtp.gmail.com' && smtpPort === 587 && startupTimedOut)) {
-      attempts.push({ port: smtpPort, secure: smtpSecure, label: `primary:${smtpPort}` });
-    } else {
-      console.warn('[Email OTP] Skipping Gmail 587 because startup verification timed out. Trying 465 directly.');
-    }
-
-    if (smtpHost === 'smtp.gmail.com' && smtpPort !== 465) {
-      attempts.push({ port: 465, secure: true, label: 'fallback:465' });
-    }
+    attempts.push({ port: smtpPort, secure: smtpSecure, label: `smtp:${smtpPort}` });
 
     let info;
     let lastError;
