@@ -241,6 +241,8 @@ let smtpStartupError = null;
 const hasResendConfig = Boolean(process.env.RESEND_API_KEY);
 const hasBrevoConfig = Boolean(process.env.BREVO_API_KEY);
 const resend = hasResendConfig ? new Resend(process.env.RESEND_API_KEY) : null;
+const emailFromName = process.env.SMTP_FROM_NAME || 'Mahathi Contractors';
+const emailFromAddress = process.env.SMTP_FROM_EMAIL || process.env.RESEND_FROM_EMAIL || process.env.BREVO_FROM_EMAIL || process.env.SMTP_USER;
 
 const createSmtpTransporter = ({ port = smtpPort, secure = smtpSecure, timeoutMs = 6000 } = {}) =>
   nodemailer.createTransport({
@@ -262,6 +264,7 @@ const isEmailConfigured = Boolean(isSmtpConfigured || hasResendConfig || hasBrev
 
 if (hasResendConfig) {
   console.log('[Email OTP] Resend API configured. OTP emails will prefer HTTPS delivery.');
+  console.log(`[Resend] Using sender: ${emailFromAddress || 'SMTP_FROM_EMAIL is not set'}`);
 }
 
 if (hasBrevoConfig) {
@@ -523,8 +526,13 @@ async function sendVerificationEmail(email, otp) {
     throw new Error('Email service is not configured.');
   }
 
-  const fromName = process.env.SMTP_FROM_NAME || 'Mahathi Contractors';
-  const fromEmail = process.env.SMTP_FROM_EMAIL || process.env.RESEND_FROM_EMAIL || process.env.BREVO_FROM_EMAIL || process.env.SMTP_USER;
+  const fromName = emailFromName;
+  const fromEmail = emailFromAddress;
+
+  if (!fromEmail) {
+    throw new Error('SMTP_FROM_EMAIL is required for OTP email sending.');
+  }
+
   console.log('[Email OTP] Send start:', {
     to: email,
     resendConfigured: hasResendConfig,
