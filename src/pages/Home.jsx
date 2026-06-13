@@ -8,6 +8,7 @@ import FeaturedServices from '../components/home/FeaturedServices';
 import BeforeAfterSection from '../components/home/BeforeAfterSection';
 import ReviewsCarousel from '../components/home/ReviewsCarousel';
 import CTASection from '../components/home/CTASection';
+import SEO from '@/components/SEO';
 
 export default function Home() {
   const planningPoints = [
@@ -19,6 +20,11 @@ export default function Home() {
 
   return (
     <div>
+      <SEO
+        title="Mahathi Building Contractors | Construction Company in Vijayawada"
+        description="Mahathi Building Contractors provides house construction, renovation, interiors, painting, plumbing, electrical, waterproofing, civil works, and maintenance services in Vijayawada and Andhra Pradesh."
+        canonical="https://mahathicontractors.in/"
+      />
       <HeroSection />
       <StatsSection />
       <section className="border-b border-white/5 bg-[#090D16] py-20">
